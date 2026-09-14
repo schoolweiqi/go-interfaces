@@ -1,0 +1,584 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Go Client — автономная основа</title>
+  <style>
+    :root {
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color-scheme: dark;
+      background: #17191b;
+      color: #eeeeee;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: #17191b; }
+    .shell { min-height: 100vh; }
+    header {
+      height: 58px;
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      gap: 22px;
+      background: #101112;
+      border-bottom: 1px solid #303337;
+    }
+    header b { font: 700 25px Georgia, serif; color: #d9aa63; }
+    header span { color: #9ca3aa; font-size: 14px; }
+    main {
+      display: grid;
+      grid-template-columns: 300px minmax(420px, 1fr);
+      grid-template-areas: "login board" "setup board" "controls board";
+      gap: 16px;
+      padding: 16px;
+      max-width: 1250px;
+      margin: auto;
+      align-items: start;
+    }
+    .panel {
+      background: #222529;
+      border: 1px solid #34383d;
+      border-radius: 12px;
+      padding: 18px;
+    }
+    .login { grid-area: login; }
+    .setup { grid-area: setup; }
+    .controls { grid-area: controls; }
+    .boardWrap {
+      grid-area: board;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-width: 0;
+    }
+    canvas {
+      width: min(82vh, 100%);
+      aspect-ratio: 1;
+      display: block;
+      border-radius: 4px;
+      box-shadow: 0 14px 40px #0008;
+      touch-action: manipulation;
+    }
+    h2 { font-size: 17px; margin: 0 0 15px; }
+    p { margin: 0 0 12px; line-height: 1.45; }
+    .muted { color: #9ca3aa; font-size: 13px; }
+    input, select, button {
+      width: 100%;
+      min-height: 40px;
+      border-radius: 7px;
+      border: 1px solid #3c4147;
+      background: #17191b;
+      color: #eeeeee;
+      padding: 0 11px;
+      margin: 0 0 10px;
+      font: inherit;
+    }
+    button {
+      cursor: pointer;
+      background: #b98645;
+      border-color: #c49356;
+      color: #15100a;
+      font-weight: 700;
+    }
+    button.secondary { background: #2d3136; border-color: #454b52; color: #eee; }
+    button:disabled { cursor: not-allowed; opacity: .55; }
+    label { display: block; color: #aeb4ba; font-size: 13px; }
+    .msg { min-height: 20px; font-size: 12px; color: #d8b37f; word-break: break-word; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .row button { margin-bottom: 0; }
+    .turn {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      margin-bottom: 12px;
+      color: #c7ccd2;
+      font-size: 14px;
+    }
+    .turnStone {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #0a0a0a;
+      border: 1px solid #555;
+      box-shadow: inset -3px -3px 5px #0007, inset 3px 3px 4px #fff2;
+    }
+    .turnStone.white { background: #eee; border-color: #999; box-shadow: inset -3px -3px 5px #aaa7, inset 3px 3px 4px #fff; }
+    @media (max-width: 820px) {
+      main {
+        grid-template-columns: 1fr;
+        grid-template-areas: "login" "setup" "controls" "board";
+      }
+      canvas { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <b>GO</b>
+      <span id="status">Автономный режим · OGS пока не подключён</span>
+    </header>
+
+    <main>
+      <section class="panel login">
+        <h2>Вход в OGS</h2>
+        <p class="muted">Безопасный вход через официальный OAuth OGS. Пароль OGS это приложение не получает.</p>
+        <label>
+          Client ID
+          <input id="ogsClientId" type="text" placeholder="Вставьте Client ID из OGS">
+        </label>
+        <label>
+          Redirect URI
+          <input id="ogsRedirectUri" type="url" placeholder="https://ваш-сайт.example/index.html">
+        </label>
+        <button id="login">Войти через OGS</button>
+        <button id="logout" class="secondary" hidden>Выйти из OGS</button>
+        <div class="msg" id="authMsg">Для OAuth страницу нужно открыть через http:// или https://, не как file://.</div>
+      </section>
+
+      <section class="panel setup">
+        <h2>Новая партия</h2>
+        <label>
+          Размер доски
+          <select id="size">
+            <option value="19" selected>19 × 19</option>
+            <option value="13">13 × 13</option>
+            <option value="9">9 × 9</option>
+          </select>
+        </label>
+        <label>
+          Основное время
+          <select id="time">
+            <option value="300">5 минут</option>
+            <option value="600" selected>10 минут</option>
+            <option value="1200">20 минут</option>
+            <option value="1800">30 минут</option>
+          </select>
+        </label>
+        <button id="newGame">Начать локальную партию</button>
+        <div class="msg" id="gameMsg">Можно играть локально прямо сейчас.</div>
+      </section>
+
+      <section class="panel controls">
+        <h2>Партия</h2>
+        <div class="turn"><span id="turnStone" class="turnStone"></span><span id="turnText">Ход чёрных</span></div>
+        <div class="row">
+          <button id="pass" class="secondary">Пас</button>
+          <button id="undo" class="secondary">Отменить ход</button>
+        </div>
+      </section>
+
+      <section class="boardWrap">
+        <canvas id="board" aria-label="Доска Го"></canvas>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    // Статическая версия: никакого Node.js, npm, TypeScript и сборщика.
+    // Локальная игра работает даже через file://.
+    // OAuth OGS требует http:// или https:// redirect URI, поэтому для входа страницу
+    // нужно разместить на обычном статическом веб-хостинге (например GitHub Pages).
+
+    const OGS = {
+      authUrl: 'https://online-go.com/oauth2/authorize/',
+      tokenUrl: 'https://online-go.com/oauth2/token/',
+      meUrl: 'https://online-go.com/api/v1/me/'
+    };
+
+    function base64Url(bytes) {
+      let binary = '';
+      for (const byte of bytes) binary += String.fromCharCode(byte);
+      return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+    }
+
+    function randomUrlSafe(bytes = 32) {
+      const data = new Uint8Array(bytes);
+      crypto.getRandomValues(data);
+      return base64Url(data);
+    }
+
+    async function sha256Base64Url(text) {
+      const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+      return base64Url(new Uint8Array(digest));
+    }
+
+    function cleanOAuthQuery() {
+      const url = new URL(location.href);
+      ['code', 'state', 'error', 'error_description'].forEach(k => url.searchParams.delete(k));
+      history.replaceState({}, document.title, url.pathname + url.search + url.hash);
+    }
+
+    function currentRedirectCandidate() {
+      if (location.protocol !== 'http:' && location.protocol !== 'https:') return '';
+      const u = new URL(location.href);
+      u.search = '';
+      u.hash = '';
+      return u.href;
+    }
+
+    class GoBoard {
+      constructor(canvas, size = 19) {
+        this.canvas = canvas;
+        this.ctx = canvas.getContext('2d');
+        this.size = size;
+        this.stones = [];
+        this.history = [];
+        this.onIntersection = null;
+        this.setSize(size);
+
+        canvas.addEventListener('click', (event) => this.handleClick(event));
+        window.addEventListener('resize', () => this.draw());
+      }
+
+      setSize(size) {
+        this.size = Number(size);
+        this.stones = Array(this.size * this.size).fill(0);
+        this.history = [];
+        this.draw();
+      }
+
+      index(x, y) { return y * this.size + x; }
+      getStone(x, y) { return this.stones[this.index(x, y)]; }
+
+      playStone(x, y, stone) {
+        if (x < 0 || y < 0 || x >= this.size || y >= this.size) return false;
+        if (this.getStone(x, y) !== 0) return false;
+        this.stones[this.index(x, y)] = stone;
+        this.history.push({ x, y, stone });
+        this.draw();
+        return true;
+      }
+
+      undo() {
+        const move = this.history.pop();
+        if (!move) return null;
+        this.stones[this.index(move.x, move.y)] = 0;
+        this.draw();
+        return move;
+      }
+
+      reset() {
+        this.stones.fill(0);
+        this.history = [];
+        this.draw();
+      }
+
+      metrics() {
+        const rect = this.canvas.getBoundingClientRect();
+        const cssSize = Math.max(300, Math.min(rect.width || 700, rect.width || 700));
+        const dpr = window.devicePixelRatio || 1;
+        const pixelSize = Math.floor(cssSize * dpr);
+
+        if (this.canvas.width !== pixelSize || this.canvas.height !== pixelSize) {
+          this.canvas.width = pixelSize;
+          this.canvas.height = pixelSize;
+        }
+        this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        const pad = Math.max(18, cssSize * 0.055);
+        return { cssSize, pad, step: (cssSize - pad * 2) / (this.size - 1) };
+      }
+
+      draw() {
+        if (!this.ctx) return;
+        const { cssSize, pad, step } = this.metrics();
+        const c = this.ctx;
+
+        c.clearRect(0, 0, cssSize, cssSize);
+
+        const wood = c.createLinearGradient(0, 0, cssSize, cssSize);
+        wood.addColorStop(0, '#e4b76e');
+        wood.addColorStop(0.5, '#d9aa63');
+        wood.addColorStop(1, '#c99751');
+        c.fillStyle = wood;
+        c.fillRect(0, 0, cssSize, cssSize);
+
+        c.strokeStyle = '#2d2116';
+        c.lineWidth = 1;
+        for (let i = 0; i < this.size; i++) {
+          const p = pad + i * step;
+          c.beginPath(); c.moveTo(pad, p); c.lineTo(cssSize - pad, p); c.stroke();
+          c.beginPath(); c.moveTo(p, pad); c.lineTo(p, cssSize - pad); c.stroke();
+        }
+
+        for (const [x, y] of this.starPoints()) {
+          c.beginPath();
+          c.arc(pad + x * step, pad + y * step, Math.max(2.2, step * 0.07), 0, Math.PI * 2);
+          c.fillStyle = '#2d2116';
+          c.fill();
+        }
+
+        for (let y = 0; y < this.size; y++) {
+          for (let x = 0; x < this.size; x++) {
+            const stone = this.getStone(x, y);
+            if (!stone) continue;
+            this.drawStone(pad + x * step, pad + y * step, step * 0.46, stone);
+          }
+        }
+      }
+
+      drawStone(cx, cy, radius, stone) {
+        const c = this.ctx;
+        c.save();
+        c.shadowColor = '#0008';
+        c.shadowBlur = Math.max(2, radius * 0.18);
+        c.shadowOffsetY = Math.max(1, radius * 0.10);
+
+        const gradient = c.createRadialGradient(
+          cx - radius * 0.35, cy - radius * 0.4, radius * 0.08,
+          cx, cy, radius
+        );
+
+        if (stone === 1) {
+          gradient.addColorStop(0, '#5d5d5d');
+          gradient.addColorStop(0.32, '#1c1c1c');
+          gradient.addColorStop(1, '#020202');
+        } else {
+          gradient.addColorStop(0, '#ffffff');
+          gradient.addColorStop(0.68, '#eeeeee');
+          gradient.addColorStop(1, '#a8a8a8');
+        }
+
+        c.beginPath();
+        c.arc(cx, cy, radius, 0, Math.PI * 2);
+        c.fillStyle = gradient;
+        c.fill();
+        c.restore();
+
+        if (stone === 2) {
+          c.beginPath();
+          c.arc(cx, cy, radius, 0, Math.PI * 2);
+          c.strokeStyle = '#777';
+          c.lineWidth = 1;
+          c.stroke();
+        }
+      }
+
+      starPoints() {
+        if (this.size === 19) return [[3,3],[9,3],[15,3],[3,9],[9,9],[15,9],[3,15],[9,15],[15,15]];
+        if (this.size === 13) return [[3,3],[9,3],[6,6],[3,9],[9,9]];
+        if (this.size === 9) return [[2,2],[6,2],[4,4],[2,6],[6,6]];
+        return [];
+      }
+
+      handleClick(event) {
+        const { pad, step } = this.metrics();
+        const rect = this.canvas.getBoundingClientRect();
+        const x = Math.round((event.clientX - rect.left - pad) / step);
+        const y = Math.round((event.clientY - rect.top - pad) / step);
+        if (x >= 0 && y >= 0 && x < this.size && y < this.size && this.onIntersection) {
+          this.onIntersection(x, y);
+        }
+      }
+    }
+
+    const authMsg = document.getElementById('authMsg');
+    const loginButton = document.getElementById('login');
+    const logoutButton = document.getElementById('logout');
+    const clientIdInput = document.getElementById('ogsClientId');
+    const redirectInput = document.getElementById('ogsRedirectUri');
+    const headerStatus = document.getElementById('status');
+
+    clientIdInput.value = localStorage.getItem('ogs_client_id') || '';
+    redirectInput.value = localStorage.getItem('ogs_redirect_uri') || currentRedirectCandidate();
+
+    function setLoggedOut(message = 'Не подключено к OGS') {
+      loginButton.hidden = false;
+      logoutButton.hidden = true;
+      headerStatus.textContent = 'Локальный режим · OGS не подключён';
+      authMsg.textContent = message;
+    }
+
+    function setLoggedIn(user) {
+      loginButton.hidden = true;
+      logoutButton.hidden = false;
+      const name = user && (user.username || user.name) ? (user.username || user.name) : 'пользователь';
+      headerStatus.textContent = `OGS · ${name}`;
+      authMsg.textContent = `Подключено к OGS как ${name}.`;
+    }
+
+    async function getOgsUser(accessToken) {
+      const response = await fetch(OGS.meUrl, {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      if (!response.ok) throw new Error(`OGS /me/: HTTP ${response.status}`);
+      return response.json();
+    }
+
+    async function startOgsLogin() {
+      if (location.protocol !== 'http:' && location.protocol !== 'https:') {
+        authMsg.textContent = 'OAuth нельзя запустить из file://. Разместите эту папку на статическом https:// адресе (например GitHub Pages).';
+        return;
+      }
+
+      const clientId = clientIdInput.value.trim();
+      const redirectUri = redirectInput.value.trim();
+      if (!clientId || !redirectUri) {
+        authMsg.textContent = 'Укажите Client ID и Redirect URI.';
+        return;
+      }
+
+      localStorage.setItem('ogs_client_id', clientId);
+      localStorage.setItem('ogs_redirect_uri', redirectUri);
+
+      const verifier = randomUrlSafe(48);
+      const challenge = await sha256Base64Url(verifier);
+      const state = randomUrlSafe(24);
+      sessionStorage.setItem('ogs_pkce_verifier', verifier);
+      sessionStorage.setItem('ogs_oauth_state', state);
+
+      const params = new URLSearchParams({
+        client_id: clientId,
+        redirect_uri: redirectUri,
+        response_type: 'code',
+        scope: 'read write',
+        state,
+        code_challenge: challenge,
+        code_challenge_method: 'S256'
+      });
+      location.href = `${OGS.authUrl}?${params}`;
+    }
+
+    async function handleOgsCallback() {
+      const params = new URLSearchParams(location.search);
+      const error = params.get('error');
+      if (error) {
+        const description = params.get('error_description') || error;
+        cleanOAuthQuery();
+        setLoggedOut(`OGS отказал в авторизации: ${description}`);
+        return;
+      }
+
+      const code = params.get('code');
+      if (!code) {
+        const token = sessionStorage.getItem('ogs_access_token');
+        if (!token) return setLoggedOut('Готово к входу через OGS.');
+        try {
+          return setLoggedIn(await getOgsUser(token));
+        } catch (_) {
+          sessionStorage.removeItem('ogs_access_token');
+          return setLoggedOut('Сессия OGS закончилась. Войдите снова.');
+        }
+      }
+
+      const returnedState = params.get('state');
+      const expectedState = sessionStorage.getItem('ogs_oauth_state');
+      const verifier = sessionStorage.getItem('ogs_pkce_verifier');
+      const clientId = localStorage.getItem('ogs_client_id') || clientIdInput.value.trim();
+      const redirectUri = localStorage.getItem('ogs_redirect_uri') || redirectInput.value.trim();
+
+      if (!returnedState || returnedState !== expectedState) {
+        cleanOAuthQuery();
+        return setLoggedOut('Ошибка OAuth: параметр state не совпал. Попробуйте войти снова.');
+      }
+      if (!verifier || !clientId || !redirectUri) {
+        cleanOAuthQuery();
+        return setLoggedOut('Ошибка OAuth: потеряны параметры PKCE. Запустите вход ещё раз.');
+      }
+
+      authMsg.textContent = 'Получаю токен OGS…';
+      try {
+        const response = await fetch(OGS.tokenUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            grant_type: 'authorization_code',
+            code,
+            redirect_uri: redirectUri,
+            client_id: clientId,
+            code_verifier: verifier
+          })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.access_token) {
+          throw new Error(data.error_description || data.error || `HTTP ${response.status}`);
+        }
+
+        sessionStorage.setItem('ogs_access_token', data.access_token);
+        if (data.refresh_token) sessionStorage.setItem('ogs_refresh_token', data.refresh_token);
+        sessionStorage.removeItem('ogs_pkce_verifier');
+        sessionStorage.removeItem('ogs_oauth_state');
+        cleanOAuthQuery();
+        setLoggedIn(await getOgsUser(data.access_token));
+      } catch (error) {
+        cleanOAuthQuery();
+        setLoggedOut(`Не удалось войти в OGS: ${error.message}`);
+      }
+    }
+
+    loginButton.addEventListener('click', () => startOgsLogin().catch(error => {
+      authMsg.textContent = `Ошибка OAuth: ${error.message}`;
+    }));
+
+    logoutButton.addEventListener('click', () => {
+      sessionStorage.removeItem('ogs_access_token');
+      sessionStorage.removeItem('ogs_refresh_token');
+      sessionStorage.removeItem('ogs_pkce_verifier');
+      sessionStorage.removeItem('ogs_oauth_state');
+      setLoggedOut('Вы вышли из OGS.');
+    });
+
+    clientIdInput.addEventListener('change', () => localStorage.setItem('ogs_client_id', clientIdInput.value.trim()));
+    redirectInput.addEventListener('change', () => localStorage.setItem('ogs_redirect_uri', redirectInput.value.trim()));
+
+    const board = new GoBoard(document.getElementById('board'), 19);
+    const sizeSelect = document.getElementById('size');
+    const timeSelect = document.getElementById('time');
+    const gameMsg = document.getElementById('gameMsg');
+    const turnText = document.getElementById('turnText');
+    const turnStone = document.getElementById('turnStone');
+
+    let turn = 1; // 1 = black, 2 = white
+
+    function updateTurn() {
+      turnText.textContent = turn === 1 ? 'Ход чёрных' : 'Ход белых';
+      turnStone.classList.toggle('white', turn === 2);
+    }
+
+    function switchTurn() {
+      turn = turn === 1 ? 2 : 1;
+      updateTurn();
+    }
+
+    board.onIntersection = (x, y) => {
+      if (board.playStone(x, y, turn)) switchTurn();
+    };
+
+    sizeSelect.addEventListener('change', () => {
+      board.setSize(Number(sizeSelect.value));
+      turn = 1;
+      updateTurn();
+      gameMsg.textContent = `Доска изменена на ${sizeSelect.value} × ${sizeSelect.value}.`;
+    });
+
+    document.getElementById('newGame').addEventListener('click', () => {
+      board.setSize(Number(sizeSelect.value));
+      turn = 1;
+      updateTurn();
+      const minutes = Math.round(Number(timeSelect.value) / 60);
+      gameMsg.textContent = `Локальная партия: ${sizeSelect.value} × ${sizeSelect.value}, ${minutes} минут. Таймер подключим позже.`;
+    });
+
+    document.getElementById('pass').addEventListener('click', () => {
+      gameMsg.textContent = turn === 1 ? 'Чёрные пасуют.' : 'Белые пасуют.';
+      switchTurn();
+    });
+
+    document.getElementById('undo').addEventListener('click', () => {
+      const undone = board.undo();
+      if (!undone) {
+        gameMsg.textContent = 'Ходов для отмены нет.';
+        return;
+      }
+      turn = undone.stone;
+      updateTurn();
+      gameMsg.textContent = 'Последний ход отменён.';
+    });
+
+    updateTurn();
+    requestAnimationFrame(() => board.draw());
+    handleOgsCallback();
+  </script>
+</body>
+</html>
