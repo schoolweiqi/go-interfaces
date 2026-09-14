@@ -86,6 +86,20 @@
     .msg { min-height: 20px; font-size: 12px; color: #d8b37f; word-break: break-word; }
     .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .row button { margin-bottom: 0; }
+    .searchSummary {
+      padding: 11px 12px;
+      margin: 2px 0 10px;
+      border-radius: 8px;
+      background: #17191b;
+      border: 1px solid #34383d;
+      font-size: 13px;
+      line-height: 1.45;
+      color: #c9ced3;
+    }
+    .searchSummary b { color: #e4c28e; }
+    .captureInfo { margin-top: 12px; font-size: 13px; color: #aeb4ba; }
+    .captureInfo strong { color: #eee; }
+    a.gameLink { color: #e4b76e; }
     .turn {
       display: flex;
       align-items: center;
@@ -130,7 +144,7 @@
       </section>
 
       <section class="panel setup">
-        <h2>Новая партия</h2>
+        <h2>Поиск соперника OGS</h2>
         <label>
           Размер доски
           <select id="size">
@@ -140,16 +154,22 @@
           </select>
         </label>
         <label>
-          Основное время
-          <select id="time">
-            <option value="300">5 минут</option>
-            <option value="600" selected>10 минут</option>
-            <option value="1200">20 минут</option>
-            <option value="1800">30 минут</option>
+          Скорость партии
+          <select id="speed">
+            <option value="blitz">Blitz</option>
+            <option value="rapid">Rapid</option>
+            <option value="live" selected>Live</option>
+            <option value="correspondence">Correspondence</option>
           </select>
         </label>
-        <button id="newGame">Начать локальную партию</button>
-        <div class="msg" id="gameMsg">Можно играть локально прямо сейчас.</div>
+        <div class="searchSummary" id="searchSummary">
+          Система времени: <b>бёёми</b><br>
+          OGS назначит конкретное основное время, длительность периода и число периодов после создания партии.
+        </div>
+        <button id="findOpponent" disabled>Найти соперника на OGS</button>
+        <button id="cancelSearch" class="secondary" hidden>Отменить поиск</button>
+        <button id="newGame" class="secondary">Локальная тестовая партия</button>
+        <div class="msg" id="gameMsg">Войдите в OGS для автоматического поиска. Локальная доска доступна всегда.</div>
       </section>
 
       <section class="panel controls">
@@ -159,6 +179,7 @@
           <button id="pass" class="secondary">Пас</button>
           <button id="undo" class="secondary">Отменить ход</button>
         </div>
+        <div class="captureInfo">Снято: чёрными <strong id="blackCaptures">0</strong> · белыми <strong id="whiteCaptures">0</strong></div>
       </section>
 
       <section class="boardWrap">
@@ -181,7 +202,9 @@
     const OGS = {
       authUrl: 'https://online-go.com/oauth2/authorize/',
       tokenUrl: 'https://online-go.com/oauth2/token/',
-      meUrl: 'https://online-go.com/api/v1/me/'
+      meUrl: 'https://online-go.com/api/v1/me/',
+      configUrl: 'https://online-go.com/api/v1/ui/config',
+      websocketUrl: 'wss://wsp.online-go.com'
     };
 
     function base64Url(bytes) {
@@ -233,25 +256,103 @@
         this.size = Number(size);
         this.stones = Array(this.size * this.size).fill(0);
         this.history = [];
+        this.positionHistory = [this.positionKey()];
+        this.captures = { 1: 0, 2: 0 };
         this.draw();
       }
 
       index(x, y) { return y * this.size + x; }
       getStone(x, y) { return this.stones[this.index(x, y)]; }
+      setStone(x, y, stone) { this.stones[this.index(x, y)] = stone; }
+      positionKey() { return this.stones.join(''); }
+
+      neighbors(x, y) {
+        const out = [];
+        if (x > 0) out.push([x - 1, y]);
+        if (x + 1 < this.size) out.push([x + 1, y]);
+        if (y > 0) out.push([x, y - 1]);
+        if (y + 1 < this.size) out.push([x, y + 1]);
+        return out;
+      }
+
+      groupAt(x, y) {
+        const color = this.getStone(x, y);
+        if (!color) return { stones: [], liberties: new Set() };
+        const todo = [[x, y]];
+        const seen = new Set([`${x},${y}`]);
+        const stones = [];
+        const liberties = new Set();
+
+        while (todo.length) {
+          const [cx, cy] = todo.pop();
+          stones.push([cx, cy]);
+          for (const [nx, ny] of this.neighbors(cx, cy)) {
+            const value = this.getStone(nx, ny);
+            if (value === 0) {
+              liberties.add(`${nx},${ny}`);
+            } else if (value === color) {
+              const key = `${nx},${ny}`;
+              if (!seen.has(key)) {
+                seen.add(key);
+                todo.push([nx, ny]);
+              }
+            }
+          }
+        }
+        return { stones, liberties };
+      }
+
+      removeGroup(group) {
+        for (const [x, y] of group.stones) this.setStone(x, y, 0);
+        return group.stones.length;
+      }
 
       playStone(x, y, stone) {
-        if (x < 0 || y < 0 || x >= this.size || y >= this.size) return false;
-        if (this.getStone(x, y) !== 0) return false;
-        this.stones[this.index(x, y)] = stone;
-        this.history.push({ x, y, stone });
+        if (x < 0 || y < 0 || x >= this.size || y >= this.size) return { ok: false, reason: 'outside' };
+        if (this.getStone(x, y) !== 0) return { ok: false, reason: 'occupied' };
+
+        const before = this.stones.slice();
+        const capturesBefore = { ...this.captures };
+        this.setStone(x, y, stone);
+
+        const opponent = stone === 1 ? 2 : 1;
+        let captured = 0;
+        const checked = new Set();
+        for (const [nx, ny] of this.neighbors(x, y)) {
+          if (this.getStone(nx, ny) !== opponent) continue;
+          const key = `${nx},${ny}`;
+          if (checked.has(key)) continue;
+          const group = this.groupAt(nx, ny);
+          for (const [gx, gy] of group.stones) checked.add(`${gx},${gy}`);
+          if (group.liberties.size === 0) captured += this.removeGroup(group);
+        }
+
+        // Suicide is illegal under the Japanese rules used by our local test board.
+        if (this.groupAt(x, y).liberties.size === 0) {
+          this.stones = before;
+          return { ok: false, reason: 'suicide' };
+        }
+
+        // Simple ko: disallow immediate recreation of the position from two plies ago.
+        const afterKey = this.positionKey();
+        if (this.positionHistory.length >= 2 && afterKey === this.positionHistory[this.positionHistory.length - 2]) {
+          this.stones = before;
+          return { ok: false, reason: 'ko' };
+        }
+
+        this.captures[stone] += captured;
+        this.history.push({ x, y, stone, before, capturesBefore, captured });
+        this.positionHistory.push(afterKey);
         this.draw();
-        return true;
+        return { ok: true, captured };
       }
 
       undo() {
         const move = this.history.pop();
         if (!move) return null;
-        this.stones[this.index(move.x, move.y)] = 0;
+        this.stones = move.before.slice();
+        this.captures = { ...move.capturesBefore };
+        this.positionHistory.pop();
         this.draw();
         return move;
       }
@@ -259,6 +360,8 @@
       reset() {
         this.stones.fill(0);
         this.history = [];
+        this.positionHistory = [this.positionKey()];
+        this.captures = { 1: 0, 2: 0 };
         this.draw();
       }
 
@@ -371,6 +474,143 @@
       }
     }
 
+    let ogsSocket = null;
+    let ogsSocketReady = false;
+    let activeAutomatchUuid = null;
+    let lastOgsConfig = null;
+
+    function wsSend(command, data = {}, id) {
+      if (!ogsSocket || ogsSocket.readyState !== WebSocket.OPEN) {
+        throw new Error('WebSocket OGS ещё не подключён');
+      }
+      const packet = id === undefined ? [command, data] : [command, data, id];
+      ogsSocket.send(JSON.stringify(packet));
+    }
+
+    async function getOgsConfig(accessToken) {
+      const response = await fetch(OGS.configUrl, {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      if (!response.ok) throw new Error(`OGS /ui/config: HTTP ${response.status}`);
+      return response.json();
+    }
+
+    function setSearchState(searching, message) {
+      const findButton = document.getElementById('findOpponent');
+      const cancelButton = document.getElementById('cancelSearch');
+      findButton.hidden = searching;
+      cancelButton.hidden = !searching;
+      if (message) document.getElementById('gameMsg').textContent = message;
+    }
+
+    function handleOgsSocketMessage(event) {
+      let packet;
+      try { packet = JSON.parse(event.data); } catch (_) { return; }
+      if (!Array.isArray(packet) || packet.length < 2) return;
+
+      const type = packet[0];
+      const data = packet[1] || {};
+      if (typeof type !== 'string') return; // request-id response
+
+      if (type === 'automatch/entry') {
+        activeAutomatchUuid = data.uuid || activeAutomatchUuid;
+        setSearchState(true, 'OGS ищет подходящего соперника…');
+      } else if (type === 'automatch/cancel') {
+        activeAutomatchUuid = null;
+        setSearchState(false, 'Поиск соперника отменён.');
+      } else if (type === 'automatch/start') {
+        activeAutomatchUuid = null;
+        setSearchState(false, `Соперник найден. Партия #${data.game_id} создана.`);
+        // Пока наша доска ещё не синхронизирована с живой OGS-партией,
+        // безопасно переводим игрока в официальный игровой экран OGS.
+        if (data.game_id) {
+          setTimeout(() => { location.href = `https://online-go.com/game/${data.game_id}`; }, 650);
+        }
+      }
+    }
+
+    async function connectOgsSocket(accessToken) {
+      const findButton = document.getElementById('findOpponent');
+      ogsSocketReady = false;
+      findButton.disabled = true;
+
+      lastOgsConfig = await getOgsConfig(accessToken);
+      const jwt = lastOgsConfig && lastOgsConfig.user_jwt;
+      if (!jwt) throw new Error('OGS не вернул user_jwt');
+
+      if (ogsSocket) {
+        try { ogsSocket.close(); } catch (_) {}
+      }
+
+      ogsSocket = new WebSocket(OGS.websocketUrl);
+      ogsSocket.addEventListener('message', handleOgsSocketMessage);
+      ogsSocket.addEventListener('open', () => {
+        try {
+          wsSend('authenticate', {
+            jwt,
+            client: 'SchoolWeiqi Go Interfaces',
+            client_version: '0.4'
+          });
+          ogsSocketReady = true;
+          findButton.disabled = false;
+          document.getElementById('gameMsg').textContent = 'OGS подключён. Можно запустить автоматический поиск.';
+        } catch (error) {
+          document.getElementById('gameMsg').textContent = `Ошибка WebSocket: ${error.message}`;
+        }
+      });
+      ogsSocket.addEventListener('close', () => {
+        ogsSocketReady = false;
+        findButton.disabled = true;
+        if (sessionStorage.getItem('ogs_access_token')) {
+          document.getElementById('gameMsg').textContent = 'Соединение с игровым сервером OGS закрыто. Обновите страницу.';
+        }
+      });
+      ogsSocket.addEventListener('error', () => {
+        document.getElementById('gameMsg').textContent = 'Не удалось подключиться к игровому WebSocket OGS.';
+      });
+    }
+
+    function makeUuid() {
+      if (crypto.randomUUID) return crypto.randomUUID();
+      return `${randomUrlSafe(12)}-${Date.now()}`;
+    }
+
+    function automatchPreferences() {
+      const size = document.getElementById('size').value;
+      const speed = document.getElementById('speed').value;
+      return {
+        uuid: makeUuid(),
+        size_speed_options: [{ size: `${size}x${size}`, speed, system: 'byoyomi' }],
+        lower_rank_diff: 3,
+        upper_rank_diff: 3,
+        rules: { condition: 'preferred', value: 'japanese' },
+        handicap: { condition: 'preferred', value: 'disabled' },
+        timestamp: Date.now()
+      };
+    }
+
+    function startAutomatch() {
+      if (!sessionStorage.getItem('ogs_access_token')) {
+        document.getElementById('gameMsg').textContent = 'Сначала войдите в OGS.';
+        return;
+      }
+      if (!ogsSocketReady) {
+        document.getElementById('gameMsg').textContent = 'Игровое соединение OGS ещё не готово.';
+        return;
+      }
+      const preferences = automatchPreferences();
+      activeAutomatchUuid = preferences.uuid;
+      wsSend('automatch/find_match', preferences);
+      setSearchState(true, `Ищем соперника: ${document.getElementById('size').value}×${document.getElementById('size').value}, ${document.getElementById('speed').selectedOptions[0].text}, бёёми…`);
+    }
+
+    function cancelAutomatch() {
+      if (!activeAutomatchUuid || !ogsSocketReady) return;
+      wsSend('automatch/cancel', { uuid: activeAutomatchUuid });
+      activeAutomatchUuid = null;
+      setSearchState(false, 'Запрос на отмену поиска отправлен.');
+    }
+
     const authMsg = document.getElementById('authMsg');
     const loginButton = document.getElementById('login');
     const logoutButton = document.getElementById('logout');
@@ -381,6 +621,8 @@
       logoutButton.hidden = true;
       headerStatus.textContent = 'Локальный режим · OGS не подключён';
       authMsg.textContent = message;
+      const findButton = document.getElementById('findOpponent');
+      if (findButton) findButton.disabled = true;
     }
 
     function setLoggedIn(user) {
@@ -389,6 +631,10 @@
       const name = user && (user.username || user.name) ? (user.username || user.name) : 'пользователь';
       headerStatus.textContent = `OGS · ${name}`;
       authMsg.textContent = `Подключено к OGS как ${name}.`;
+      const token = sessionStorage.getItem('ogs_access_token');
+      if (token) connectOgsSocket(token).catch(error => {
+        document.getElementById('gameMsg').textContent = `OGS API подключён, но игровой сервер недоступен: ${error.message}`;
+      });
     }
 
     async function getOgsUser(accessToken) {
@@ -506,13 +752,18 @@
       sessionStorage.removeItem('ogs_refresh_token');
       sessionStorage.removeItem('ogs_pkce_verifier');
       sessionStorage.removeItem('ogs_oauth_state');
+      activeAutomatchUuid = null;
+      ogsSocketReady = false;
+      if (ogsSocket) { try { ogsSocket.close(); } catch (_) {} ogsSocket = null; }
       setLoggedOut('Вы вышли из OGS.');
     });
 
     const board = new GoBoard(document.getElementById('board'), 19);
     const sizeSelect = document.getElementById('size');
-    const timeSelect = document.getElementById('time');
+    const speedSelect = document.getElementById('speed');
     const gameMsg = document.getElementById('gameMsg');
+    const blackCaptures = document.getElementById('blackCaptures');
+    const whiteCaptures = document.getElementById('whiteCaptures');
     const turnText = document.getElementById('turnText');
     const turnStone = document.getElementById('turnStone');
 
@@ -523,19 +774,33 @@
       turnStone.classList.toggle('white', turn === 2);
     }
 
+    function updateCaptures() {
+      blackCaptures.textContent = board.captures[1] || 0;
+      whiteCaptures.textContent = board.captures[2] || 0;
+    }
+
     function switchTurn() {
       turn = turn === 1 ? 2 : 1;
       updateTurn();
     }
 
     board.onIntersection = (x, y) => {
-      if (board.playStone(x, y, turn)) switchTurn();
+      const result = board.playStone(x, y, turn);
+      if (!result.ok) {
+        const messages = { occupied: 'Пересечение занято.', suicide: 'Самоубийственный ход запрещён.', ko: 'Нельзя немедленно повторить позицию ко.' };
+        gameMsg.textContent = messages[result.reason] || 'Этот ход невозможен.';
+        return;
+      }
+      if (result.captured) gameMsg.textContent = `Снято камней: ${result.captured}.`;
+      updateCaptures();
+      switchTurn();
     };
 
     sizeSelect.addEventListener('change', () => {
       board.setSize(Number(sizeSelect.value));
       turn = 1;
       updateTurn();
+      updateCaptures();
       gameMsg.textContent = `Доска изменена на ${sizeSelect.value} × ${sizeSelect.value}.`;
     });
 
@@ -543,9 +808,19 @@
       board.setSize(Number(sizeSelect.value));
       turn = 1;
       updateTurn();
-      const minutes = Math.round(Number(timeSelect.value) / 60);
-      gameMsg.textContent = `Локальная партия: ${sizeSelect.value} × ${sizeSelect.value}, ${minutes} минут. Таймер подключим позже.`;
+      updateCaptures();
+      gameMsg.textContent = `Локальная тестовая партия: ${sizeSelect.value} × ${sizeSelect.value}. Снятие групп, запрет самоубийства и простое ко включены.`;
     });
+
+    document.getElementById('findOpponent').addEventListener('click', startAutomatch);
+    document.getElementById('cancelSearch').addEventListener('click', cancelAutomatch);
+
+    function updateSearchSummary() {
+      document.getElementById('searchSummary').innerHTML =
+        `Система времени: <b>бёёми</b> · Скорость: <b>${speedSelect.selectedOptions[0].text}</b><br>` +
+        `OGS назначит конкретные main time / период / число периодов после создания партии.`;
+    }
+    speedSelect.addEventListener('change', updateSearchSummary);
 
     document.getElementById('pass').addEventListener('click', () => {
       gameMsg.textContent = turn === 1 ? 'Чёрные пасуют.' : 'Белые пасуют.';
@@ -560,10 +835,13 @@
       }
       turn = undone.stone;
       updateTurn();
-      gameMsg.textContent = 'Последний ход отменён.';
+      updateCaptures();
+      gameMsg.textContent = 'Последний ход отменён вместе со снятыми камнями.';
     });
 
     updateTurn();
+    updateCaptures();
+    updateSearchSummary();
     requestAnimationFrame(() => board.draw());
     handleOgsCallback();
   </script>

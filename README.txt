@@ -1,52 +1,12 @@
-GO CLIENT — СТАТИЧЕСКАЯ ВЕРСИЯ С OGS OAUTH (PKCE)
+Go Interfaces — automatch + captures
 
-ВАЖНО
-======
-Локальная доска по-прежнему работает двойным кликом по index.html.
-Но OAuth OGS НЕ может завершиться из file:// URL: OGS требует зарегистрированный http:// или https:// Redirect URI.
-Node.js всё равно не нужен: достаточно любого статического HTTPS-хостинга, например GitHub Pages.
+1. Upload index.html to the root of https://schoolweiqi.github.io/go-interfaces/
+2. OAuth settings remain:
+   Client type: Public
+   Grant: Authorization code
+   Redirect URI: https://schoolweiqi.github.io/go-interfaces/
+3. Log in via OGS.
+4. Choose board size and speed, then click "Найти соперника на OGS".
+5. Until the local board is fully synchronized with OGS live games, after automatch finds an opponent the page safely redirects to the official OGS game screen.
 
-НАСТРОЙКА OGS
-==============
-1. Войдите в OGS.
-2. Откройте https://online-go.com/oauth2/applications/
-3. Создайте/измените приложение:
-   - Client type: Public
-   - Authorization grant type: Authorization code
-   - Redirect URI: точный HTTPS-адрес index.html, например
-     https://USERNAME.github.io/go-client/index.html
-4. Скопируйте Client ID.
-
-ЗАПУСК
-======
-1. Разместите содержимое папки на статическом HTTPS-хостинге.
-2. Откройте index.html через https://...
-3. Вставьте Client ID.
-4. В Redirect URI укажите ТОЧНО тот же адрес, который зарегистрирован в OGS.
-5. Нажмите «Войти через OGS».
-6. OGS откроет свою страницу авторизации и после подтверждения вернёт вас в приложение.
-
-БЕЗОПАСНОСТЬ
-============
-- пароль OGS приложение не получает;
-- client_secret не нужен и не хранится;
-- используется OAuth Authorization Code + PKCE (S256);
-- access token хранится только в sessionStorage и исчезает после закрытия вкладки/браузера;
-- Client ID и Redirect URI сохраняются локально для удобства.
-
-ЧТО РАБОТАЕТ
-============
-- безопасный вход через OGS OAuth + PKCE;
-- проверка токена через /api/v1/me/;
-- обычная локальная доска Го;
-- 9x9, 13x13, 19x19;
-- выбор времени;
-- локальные ходы, пас, отмена.
-
-ПОКА НЕ ПОДКЛЮЧЕНО
-==================
-- WebSocket OGS;
-- список/создание сетевых партий;
-- реальные сетевые ходы;
-- правила взятия, ко и подсчёт территории;
-- таймер.
+Local test board now implements group/liberty capture, suicide prevention, simple ko, capture counters, and undo with restoration of captured stones.
