@@ -49,7 +49,29 @@
       display: flex;
       justify-content: center;
       align-items: flex-start;
+      gap: 12px;
       min-width: 0;
+    }
+    .boardModes {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      width: 116px;
+      flex: 0 0 116px;
+    }
+    .boardModes button {
+      min-height: 34px;
+      margin: 0;
+      padding: 0 10px;
+      font-size: 12px;
+      background: #2d3136;
+      border-color: #454b52;
+      color: #eee;
+    }
+    .boardModes button.active {
+      background: #b98645;
+      border-color: #c49356;
+      color: #15100a;
     }
     canvas {
       width: min(82vh, 100%);
@@ -123,6 +145,8 @@
         grid-template-areas: "login" "setup" "controls" "board";
       }
       canvas { width: 100%; }
+      .boardWrap { align-items: stretch; }
+      .boardModes { width: 108px; flex-basis: 108px; }
     }
   </style>
 </head>
@@ -184,6 +208,10 @@
 
       <section class="boardWrap">
         <canvas id="board" aria-label="Доска Го"></canvas>
+        <div class="boardModes" aria-label="Режим отображения доски">
+          <button id="boardStandard" class="active" type="button">стандарт</button>
+          <button id="boardClean" type="button">чистое поле</button>
+        </div>
       </section>
     </main>
   </div>
@@ -246,10 +274,16 @@
         this.stones = [];
         this.history = [];
         this.onIntersection = null;
+        this.viewMode = 'standard';
         this.setSize(size);
 
         canvas.addEventListener('click', (event) => this.handleClick(event));
         window.addEventListener('resize', () => this.draw());
+      }
+
+      setViewMode(mode) {
+        this.viewMode = mode === 'clean' ? 'clean' : 'standard';
+        this.draw();
       }
 
       setSize(size) {
@@ -395,12 +429,14 @@
         c.fillStyle = wood;
         c.fillRect(0, 0, cssSize, cssSize);
 
-        c.strokeStyle = '#2d2116';
-        c.lineWidth = 1;
-        for (let i = 0; i < this.size; i++) {
-          const p = pad + i * step;
-          c.beginPath(); c.moveTo(pad, p); c.lineTo(cssSize - pad, p); c.stroke();
-          c.beginPath(); c.moveTo(p, pad); c.lineTo(p, cssSize - pad); c.stroke();
+        if (this.viewMode === 'standard') {
+          c.strokeStyle = '#2d2116';
+          c.lineWidth = 1;
+          for (let i = 0; i < this.size; i++) {
+            const p = pad + i * step;
+            c.beginPath(); c.moveTo(pad, p); c.lineTo(cssSize - pad, p); c.stroke();
+            c.beginPath(); c.moveTo(p, pad); c.lineTo(p, cssSize - pad); c.stroke();
+          }
         }
 
         for (const [x, y] of this.starPoints()) {
@@ -759,6 +795,17 @@
     });
 
     const board = new GoBoard(document.getElementById('board'), 19);
+    const boardStandardBtn = document.getElementById('boardStandard');
+    const boardCleanBtn = document.getElementById('boardClean');
+
+    function setBoardViewMode(mode) {
+      board.setViewMode(mode);
+      boardStandardBtn.classList.toggle('active', mode === 'standard');
+      boardCleanBtn.classList.toggle('active', mode === 'clean');
+    }
+
+    boardStandardBtn.addEventListener('click', () => setBoardViewMode('standard'));
+    boardCleanBtn.addEventListener('click', () => setBoardViewMode('clean'));
     const sizeSelect = document.getElementById('size');
     const speedSelect = document.getElementById('speed');
     const gameMsg = document.getElementById('gameMsg');
