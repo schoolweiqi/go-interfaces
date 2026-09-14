@@ -123,14 +123,7 @@
       <section class="panel login">
         <h2>Вход в OGS</h2>
         <p class="muted">Безопасный вход через официальный OAuth OGS. Пароль OGS это приложение не получает.</p>
-        <label>
-          Client ID
-          <input id="ogsClientId" type="text" placeholder="Вставьте Client ID из OGS">
-        </label>
-        <label>
-          Redirect URI
-          <input id="ogsRedirectUri" type="url" placeholder="https://schoolweiqi.github.io/go-interfaces/index.html">
-        </label>
+        <p class="muted">Приложение настроено на постоянный Client ID и адрес GitHub Pages.</p>
         <button id="login">Войти через OGS</button>
         <button id="logout" class="secondary" hidden>Выйти из OGS</button>
         <div class="msg" id="authMsg">Для OAuth страницу нужно открыть через http:// или https://, не как file://.</div>
@@ -179,6 +172,11 @@
     // Локальная игра работает даже через file://.
     // OAuth OGS требует http:// или https:// redirect URI, поэтому для входа страницу
     // нужно разместить на обычном статическом веб-хостинге (например GitHub Pages).
+
+    // ВСТАВЬТЕ СЮДА Client ID вашего OAuth-приложения OGS.
+    // Это публичный идентификатор приложения, хранить его в коде безопасно.
+    const OGS_CLIENT_ID = 'PASTE_YOUR_OGS_CLIENT_ID_HERE';
+    const OGS_REDIRECT_URI = 'https://schoolweiqi.github.io/go-interfaces/';
 
     const OGS = {
       authUrl: 'https://online-go.com/oauth2/authorize/',
@@ -376,12 +374,7 @@
     const authMsg = document.getElementById('authMsg');
     const loginButton = document.getElementById('login');
     const logoutButton = document.getElementById('logout');
-    const clientIdInput = document.getElementById('ogsClientId');
-    const redirectInput = document.getElementById('ogsRedirectUri');
     const headerStatus = document.getElementById('status');
-
-    clientIdInput.value = localStorage.getItem('ogs_client_id') || '';
-    redirectInput.value = localStorage.getItem('ogs_redirect_uri') || currentRedirectCandidate();
 
     function setLoggedOut(message = 'Не подключено к OGS') {
       loginButton.hidden = false;
@@ -412,15 +405,12 @@
         return;
       }
 
-      const clientId = clientIdInput.value.trim();
-      const redirectUri = redirectInput.value.trim();
-      if (!clientId || !redirectUri) {
-        authMsg.textContent = 'Укажите Client ID и Redirect URI.';
+      const clientId = OGS_CLIENT_ID;
+      const redirectUri = OGS_REDIRECT_URI;
+      if (!clientId || clientId === 'PASTE_YOUR_OGS_CLIENT_ID_HERE') {
+        authMsg.textContent = 'В коде ещё не указан OGS Client ID.';
         return;
       }
-
-      localStorage.setItem('ogs_client_id', clientId);
-      localStorage.setItem('ogs_redirect_uri', redirectUri);
 
       const verifier = randomUrlSafe(48);
       const challenge = await sha256Base64Url(verifier);
@@ -465,8 +455,8 @@
       const returnedState = params.get('state');
       const expectedState = sessionStorage.getItem('ogs_oauth_state');
       const verifier = sessionStorage.getItem('ogs_pkce_verifier');
-      const clientId = localStorage.getItem('ogs_client_id') || clientIdInput.value.trim();
-      const redirectUri = localStorage.getItem('ogs_redirect_uri') || redirectInput.value.trim();
+      const clientId = OGS_CLIENT_ID;
+      const redirectUri = OGS_REDIRECT_URI;
 
       if (!returnedState || returnedState !== expectedState) {
         cleanOAuthQuery();
@@ -518,9 +508,6 @@
       sessionStorage.removeItem('ogs_oauth_state');
       setLoggedOut('Вы вышли из OGS.');
     });
-
-    clientIdInput.addEventListener('change', () => localStorage.setItem('ogs_client_id', clientIdInput.value.trim()));
-    redirectInput.addEventListener('change', () => localStorage.setItem('ogs_redirect_uri', redirectInput.value.trim()));
 
     const board = new GoBoard(document.getElementById('board'), 19);
     const sizeSelect = document.getElementById('size');
