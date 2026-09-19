@@ -211,6 +211,7 @@
         <div class="boardModes" aria-label="Режим отображения доски">
           <button id="boardStandard" class="active" type="button">стандарт</button>
           <button id="boardClean" type="button">чистое поле</button>
+          <button id="boardFaces" type="button">лица</button>
         </div>
       </section>
     </main>
@@ -234,6 +235,17 @@
       configUrl: 'https://online-go.com/api/v1/ui/config',
       websocketUrl: 'wss://wsp.online-go.com'
     };
+
+
+    const FACE_SPRITE_FRAME = 128;
+    const FACE_STATE_INDEX = { calm: 0, happy: 1, sad: 2, crying: 3, dying: 4 };
+    const faceSprite = new Image();
+    let faceSpriteReady = false;
+    faceSprite.addEventListener('load', () => {
+      faceSpriteReady = true;
+      if (window.goBoardInstance) window.goBoardInstance.draw();
+    });
+    faceSprite.src = 'go-stone-face-sprite.png';
 
     function base64Url(bytes) {
       let binary = '';
@@ -282,7 +294,7 @@
       }
 
       setViewMode(mode) {
-        this.viewMode = mode === 'clean' ? 'clean' : 'standard';
+        this.viewMode = ['standard', 'clean', 'faces'].includes(mode) ? mode : 'standard';
         this.draw();
       }
 
@@ -415,6 +427,36 @@
         return { cssSize, pad, step: (cssSize - pad * 2) / (this.size - 1) };
       }
 
+
+      faceStateFromLiberties(liberties) {
+        if (liberties > 4) return 'happy';
+        if (liberties === 4) return 'calm';
+        if (liberties === 3) return 'sad';
+        if (liberties === 2) return 'crying';
+        return 'dying';
+      }
+
+      buildFaceMap() {
+        const map = Array.from({ length: this.size }, () => Array(this.size).fill(null));
+        const visited = new Set();
+        for (let y = 0; y < this.size; y++) {
+          for (let x = 0; x < this.size; x++) {
+            const stone = this.getStone(x, y);
+            if (!stone) continue;
+            const key = `${x},${y}`;
+            if (visited.has(key)) continue;
+            const group = this.groupAt(x, y);
+            const liberties = group.liberties.size;
+            const state = this.faceStateFromLiberties(liberties);
+            for (const [gx, gy] of group.stones) {
+              visited.add(`${gx},${gy}`);
+              map[gy][gx] = { liberties, state };
+            }
+          }
+        }
+        return map;
+      }
+
       draw() {
         if (!this.ctx) return;
         const { cssSize, pad, step } = this.metrics();
@@ -429,7 +471,10 @@
         c.fillStyle = wood;
         c.fillRect(0, 0, cssSize, cssSize);
 
-        if (this.viewMode === 'standard') {
+        const showGrid = this.viewMode !== 'clean';
+        const showFaces = this.viewMode === 'faces';
+
+        if (showGrid) {
           c.strokeStyle = '#2d2116';
           c.lineWidth = 1;
           for (let i = 0; i < this.size; i++) {
@@ -446,16 +491,18 @@
           c.fill();
         }
 
+        const faceMap = showFaces ? this.buildFaceMap() : null;
+
         for (let y = 0; y < this.size; y++) {
           for (let x = 0; x < this.size; x++) {
             const stone = this.getStone(x, y);
             if (!stone) continue;
-            this.drawStone(pad + x * step, pad + y * step, step * 0.46, stone);
+            this.drawStone(pad + x * step, pad + y * step, step * 0.46, stone, faceMap ? faceMap[y][x] : null);
           }
         }
       }
 
-      drawStone(cx, cy, radius, stone) {
+      drawStone(cx, cy, radius, stone, faceInfo = null) {
         const c = this.ctx;
         c.save();
         c.shadowColor = '#0008';
@@ -490,6 +537,32 @@
           c.lineWidth = 1;
           c.stroke();
         }
+
+        if (faceInfo && faceSpriteReady) {
+          this.drawFaceOverlay(cx, cy, radius, stone, faceInfo.state);
+        }
+      }
+
+      drawFaceOverlay(cx, cy, radius, stone, faceState) {
+        const frame = FACE_STATE_INDEX[faceState];
+        if (frame === undefined) return;
+        const c = this.ctx;
+        const frameSize = FACE_SPRITE_FRAME;
+        const sx = frame * frameSize;
+        const sy = 0;
+        const sw = frameSize;
+        const sh = faceSprite.naturalHeight || frameSize;
+        const scale = 1.06;
+        const size = radius * 2 * scale;
+        const dx = cx - size / 2;
+        const dy = cy - size / 2;
+
+        c.save();
+        c.imageSmoothingEnabled = true;
+        c.filter = stone === 1 ? 'invert(1)' : 'none';
+        c.globalAlpha = 0.96;
+        c.drawImage(faceSprite, sx, sy, sw, sh, dx, dy, size, size);
+        c.restore();
       }
 
       starPoints() {
@@ -795,17 +868,21 @@
     });
 
     const board = new GoBoard(document.getElementById('board'), 19);
+    window.goBoardInstance = board;
     const boardStandardBtn = document.getElementById('boardStandard');
     const boardCleanBtn = document.getElementById('boardClean');
+    const boardFacesBtn = document.getElementById('boardFaces');
 
     function setBoardViewMode(mode) {
       board.setViewMode(mode);
       boardStandardBtn.classList.toggle('active', mode === 'standard');
       boardCleanBtn.classList.toggle('active', mode === 'clean');
+      boardFacesBtn.classList.toggle('active', mode === 'faces');
     }
 
     boardStandardBtn.addEventListener('click', () => setBoardViewMode('standard'));
     boardCleanBtn.addEventListener('click', () => setBoardViewMode('clean'));
+    boardFacesBtn.addEventListener('click', () => setBoardViewMode('faces'));
     const sizeSelect = document.getElementById('size');
     const speedSelect = document.getElementById('speed');
     const gameMsg = document.getElementById('gameMsg');
