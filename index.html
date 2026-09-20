@@ -529,7 +529,6 @@
         }
 
         const groups = showFaces ? this.buildGroups() : null;
-        if (showFaces && transitionSpriteReady) this.drawTransitions(groups, pad, step);
 
         for (let y = 0; y < this.size; y++) {
           for (let x = 0; x < this.size; x++) {
@@ -539,6 +538,7 @@
           }
         }
 
+        if (showFaces && transitionSpriteReady) this.drawTransitions(groups, pad, step);
         if (showFaces && faceSpriteReady) this.drawGroupFaces(groups, pad, step);
       }
 
@@ -599,14 +599,14 @@
       drawPairConnector(cx, cy, step, stone, vertical) {
         const c = this.ctx;
         const frame = TRANSITION_SPRITE_FRAME;
-        const width = step * 2.20;
-        const height = step * 2.00;
+        const width = step * 1.92;
+        const height = step * 0.98;
         c.save();
         c.translate(cx, cy);
         if (vertical) c.rotate(Math.PI / 2);
         c.imageSmoothingEnabled = true;
         c.filter = stone === 1 ? 'invert(1)' : 'none';
-        c.globalAlpha = 0.98;
+        c.globalAlpha = 1;
         c.drawImage(transitionSprite, 0, 0, frame, frame, -width / 2, -height / 2, width, height);
         c.restore();
       }
@@ -614,13 +614,13 @@
       drawSquareConnector(cx, cy, step, stone) {
         const c = this.ctx;
         const frame = TRANSITION_SPRITE_FRAME;
-        const width = step * 2.00;
-        const height = step * 2.00;
+        const width = step * 1.92;
+        const height = step * 1.92;
         c.save();
         c.translate(cx, cy);
         c.imageSmoothingEnabled = true;
         c.filter = stone === 1 ? 'invert(1)' : 'none';
-        c.globalAlpha = 0.98;
+        c.globalAlpha = 1;
         c.drawImage(transitionSprite, frame, 0, frame, frame, -width / 2, -height / 2, width, height);
         c.restore();
       }
