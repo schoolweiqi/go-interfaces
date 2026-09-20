@@ -247,6 +247,16 @@
     });
     faceSprite.src = 'go-stone-face-sprite.png';
 
+
+    const TRANSITION_SPRITE_FRAME = 128;
+    const transitionSprite = new Image();
+    let transitionSpriteReady = false;
+    transitionSprite.addEventListener('load', () => {
+      transitionSpriteReady = true;
+      if (window.goBoardInstance) window.goBoardInstance.draw();
+    });
+    transitionSprite.src = 'go-stone-transition-sprite.png';
+
     function base64Url(bytes) {
       let binary = '';
       for (const byte of bytes) binary += String.fromCharCode(byte);
@@ -436,8 +446,17 @@
         return 'dying';
       }
 
-      buildFaceMap() {
-        const map = Array.from({ length: this.size }, () => Array(this.size).fill(null));
+      hashString(value) {
+        let hash = 2166136261;
+        for (let i = 0; i < value.length; i++) {
+          hash ^= value.charCodeAt(i);
+          hash = Math.imul(hash, 16777619);
+        }
+        return hash >>> 0;
+      }
+
+      buildGroups() {
+        const groups = [];
         const visited = new Set();
         for (let y = 0; y < this.size; y++) {
           for (let x = 0; x < this.size; x++) {
@@ -448,13 +467,31 @@
             const group = this.groupAt(x, y);
             const liberties = group.liberties.size;
             const state = this.faceStateFromLiberties(liberties);
-            for (const [gx, gy] of group.stones) {
-              visited.add(`${gx},${gy}`);
-              map[gy][gx] = { liberties, state };
-            }
+            const ordered = group.stones.slice().sort((a, b) => (a[1] - b[1]) || (a[0] - b[0]));
+            const seed = this.hashString(ordered.map(([gx, gy]) => `${gx},${gy}`).join('|'));
+            const anchor = ordered[seed % ordered.length];
+            const offsets = [
+              [0, 0],
+              [-0.12, -0.08],
+              [0.12, -0.08],
+              [-0.10, 0.10],
+              [0.10, 0.10],
+              [0.00, 0.14],
+              [0.00, -0.14]
+            ];
+            const faceOffset = offsets[Math.floor(seed / Math.max(1, ordered.length)) % offsets.length];
+            for (const [gx, gy] of group.stones) visited.add(`${gx},${gy}`);
+            groups.push({
+              stones: ordered,
+              color: stone,
+              liberties,
+              state,
+              anchor,
+              faceOffset
+            });
           }
         }
-        return map;
+        return groups;
       }
 
       draw() {
@@ -491,18 +528,21 @@
           c.fill();
         }
 
-        const faceMap = showFaces ? this.buildFaceMap() : null;
+        const groups = showFaces ? this.buildGroups() : null;
+        if (showFaces && transitionSpriteReady) this.drawTransitions(groups, pad, step);
 
         for (let y = 0; y < this.size; y++) {
           for (let x = 0; x < this.size; x++) {
             const stone = this.getStone(x, y);
             if (!stone) continue;
-            this.drawStone(pad + x * step, pad + y * step, step * 0.46, stone, faceMap ? faceMap[y][x] : null);
+            this.drawStone(pad + x * step, pad + y * step, step * 0.46, stone);
           }
         }
+
+        if (showFaces && faceSpriteReady) this.drawGroupFaces(groups, pad, step);
       }
 
-      drawStone(cx, cy, radius, stone, faceInfo = null) {
+      drawStone(cx, cy, radius, stone) {
         const c = this.ctx;
         c.save();
         c.shadowColor = '#0008';
@@ -537,9 +577,61 @@
           c.lineWidth = 1;
           c.stroke();
         }
+      }
 
-        if (faceInfo && faceSpriteReady) {
-          this.drawFaceOverlay(cx, cy, radius, stone, faceInfo.state);
+      drawTransitions(groups, pad, step) {
+        for (const group of groups) {
+          const coords = new Set(group.stones.map(([x, y]) => `${x},${y}`));
+          for (const [x, y] of group.stones) {
+            if (coords.has(`${x + 1},${y}`)) {
+              this.drawPairConnector(pad + (x + 0.5) * step, pad + y * step, step, group.color, false);
+            }
+            if (coords.has(`${x},${y + 1}`)) {
+              this.drawPairConnector(pad + x * step, pad + (y + 0.5) * step, step, group.color, true);
+            }
+            if (coords.has(`${x + 1},${y}`) && coords.has(`${x},${y + 1}`) && coords.has(`${x + 1},${y + 1}`)) {
+              this.drawSquareConnector(pad + (x + 0.5) * step, pad + (y + 0.5) * step, step, group.color);
+            }
+          }
+        }
+      }
+
+      drawPairConnector(cx, cy, step, stone, vertical) {
+        const c = this.ctx;
+        const frame = TRANSITION_SPRITE_FRAME;
+        const width = step * 1.06;
+        const height = step * 0.80;
+        c.save();
+        c.translate(cx, cy);
+        if (vertical) c.rotate(Math.PI / 2);
+        c.imageSmoothingEnabled = true;
+        c.filter = stone === 1 ? 'invert(1)' : 'none';
+        c.globalAlpha = 0.98;
+        c.drawImage(transitionSprite, 0, 0, frame, frame, -width / 2, -height / 2, width, height);
+        c.restore();
+      }
+
+      drawSquareConnector(cx, cy, step, stone) {
+        const c = this.ctx;
+        const frame = TRANSITION_SPRITE_FRAME;
+        const width = step * 0.96;
+        const height = step * 0.96;
+        c.save();
+        c.translate(cx, cy);
+        c.imageSmoothingEnabled = true;
+        c.filter = stone === 1 ? 'invert(1)' : 'none';
+        c.globalAlpha = 0.98;
+        c.drawImage(transitionSprite, frame, 0, frame, frame, -width / 2, -height / 2, width, height);
+        c.restore();
+      }
+
+      drawGroupFaces(groups, pad, step) {
+        for (const group of groups) {
+          const [ax, ay] = group.anchor;
+          const [ox, oy] = group.faceOffset;
+          const cx = pad + ax * step + ox * step;
+          const cy = pad + ay * step + oy * step;
+          this.drawFaceOverlay(cx, cy, step * 0.38, group.color, group.state);
         }
       }
 
@@ -552,7 +644,7 @@
         const sy = 0;
         const sw = frameSize;
         const sh = faceSprite.naturalHeight || frameSize;
-        const scale = 1.06;
+        const scale = 0.94;
         const size = radius * 2 * scale;
         const dx = cx - size / 2;
         const dy = cy - size / 2;
@@ -560,7 +652,7 @@
         c.save();
         c.imageSmoothingEnabled = true;
         c.filter = stone === 1 ? 'invert(1)' : 'none';
-        c.globalAlpha = 0.96;
+        c.globalAlpha = 0.97;
         c.drawImage(faceSprite, sx, sy, sw, sh, dx, dy, size, size);
         c.restore();
       }
