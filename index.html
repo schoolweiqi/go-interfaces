@@ -57,8 +57,8 @@
       display: flex;
       flex-direction: column;
       gap: 12px;
-      width: 260px;
-      flex: 0 0 260px;
+      width: 116px;
+      flex: 0 0 116px;
     }
     .boardModes {
       display: flex;
@@ -115,17 +115,6 @@
     .msg { min-height: 20px; font-size: 12px; color: #d8b37f; word-break: break-word; }
     .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .row button { margin-bottom: 0; }
-    .searchSummary {
-      padding: 11px 12px;
-      margin: 2px 0 10px;
-      border-radius: 8px;
-      background: #17191b;
-      border: 1px solid #34383d;
-      font-size: 13px;
-      line-height: 1.45;
-      color: #c9ced3;
-    }
-    .searchSummary b { color: #e4c28e; }
     .captureInfo { margin-top: 12px; font-size: 13px; color: #aeb4ba; }
     .captureInfo strong { color: #eee; }
     a.gameLink { color: #e4b76e; }
@@ -146,56 +135,6 @@
       box-shadow: inset -3px -3px 5px #0007, inset 3px 3px 4px #fff2;
     }
     .turnStone.white { background: #eee; border-color: #999; box-shadow: inset -3px -3px 5px #aaa7, inset 3px 3px 4px #fff; }
-    .linkSettings {
-      background: #222529;
-      border: 1px solid #34383d;
-      border-radius: 12px;
-      padding: 12px;
-      color: #d7dce1;
-    }
-    .linkSettings h3 {
-      margin: 0 0 10px;
-      font-size: 14px;
-      color: #f0d3a1;
-    }
-    .linkHelp {
-      font-size: 12px;
-      color: #9ca3aa;
-      line-height: 1.35;
-      margin: 0 0 10px;
-    }
-    .linkType {
-      border-top: 1px solid #34383d;
-      padding-top: 10px;
-      margin-top: 10px;
-    }
-    .linkType:first-of-type {
-      border-top: 0;
-      padding-top: 0;
-      margin-top: 0;
-    }
-    .linkTypeName {
-      font-size: 12px;
-      color: #e8e8e8;
-      margin-bottom: 6px;
-      line-height: 1.35;
-    }
-    .tinyRow {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-    }
-    .tinyRow label {
-      font-size: 11px;
-      color: #aeb4ba;
-    }
-    .tinyRow input {
-      min-height: 32px;
-      margin-top: 4px;
-      margin-bottom: 0;
-      font-size: 12px;
-      padding: 0 8px;
-    }
     .botStatusBox {
       padding: 10px 11px;
       border-radius: 8px;
@@ -217,7 +156,7 @@
       line-height: 1.45;
     }
     .botScore[hidden] { display: none; }
-    .botThinking { opacity: .75; }
+    .botThinking { cursor: progress; }
     @media (max-width: 820px) {
       main {
         grid-template-columns: 1fr;
@@ -239,8 +178,6 @@
     <main>
       <section class="panel login">
         <h2>Вход в OGS</h2>
-        <p class="muted">Безопасный вход через официальный OAuth OGS. Пароль OGS это приложение не получает.</p>
-        <p class="muted">Приложение настроено на постоянный Client ID и адрес GitHub Pages.</p>
         <button id="login">Войти через OGS</button>
         <button id="logout" class="secondary" hidden>Выйти из OGS</button>
         <div class="msg" id="authMsg">Для OAuth страницу нужно открыть через http:// или https://, не как file://.</div>
@@ -265,10 +202,6 @@
             <option value="correspondence">Correspondence</option>
           </select>
         </label>
-        <div class="searchSummary" id="searchSummary">
-          Система времени: <b>бёёми</b><br>
-          OGS назначит конкретное основное время, длительность периода и число периодов после создания партии.
-        </div>
         <button id="findOpponent" disabled>Найти соперника на OGS</button>
         <button id="cancelSearch" class="secondary" hidden>Отменить поиск</button>
         <button id="newGame" class="secondary">Локальная тестовая партия</button>
@@ -322,45 +255,6 @@
             <button id="boardStandard" class="active" type="button">стандарт</button>
             <button id="boardClean" type="button">чистое поле</button>
             <button id="boardFaces" type="button">лица</button>
-          </div>
-          <div class="linkSettings" id="linkSettingsPanel">
-            <h3>Тонкие связи</h3>
-            <p class="linkHelp">Параметры используются только в режиме «лица». <b>sigma</b> вводится как доля шага доски, а <b>threshold</b> задаёт толщину и заметность связи.</p>
-            <div class="linkType">
-              <div class="linkTypeName">Ход наискосок → тонкая связь 5</div>
-              <div class="tinyRow">
-                <label>sigma <input id="link-diagonal-sigma" type="number" step="0.01" min="0" value="0.12"></label>
-                <label>threshold <input id="link-diagonal-threshold" type="number" step="0.01" min="0.01" max="0.99" value="0.30"></label>
-              </div>
-            </div>
-            <div class="linkType">
-              <div class="linkTypeName">Прыжок через перекрёсток → тонкая связь 3</div>
-              <div class="tinyRow">
-                <label>sigma <input id="link-jump-sigma" type="number" step="0.01" min="0" value="0.08"></label>
-                <label>threshold <input id="link-jump-threshold" type="number" step="0.01" min="0.01" max="0.99" value="0.30"></label>
-              </div>
-            </div>
-            <div class="linkType">
-              <div class="linkTypeName">Кейма → диагональная тонкая связь 3</div>
-              <div class="tinyRow">
-                <label>sigma <input id="link-keima-sigma" type="number" step="0.01" min="0" value="0.08"></label>
-                <label>threshold <input id="link-keima-threshold" type="number" step="0.01" min="0.01" max="0.99" value="0.30"></label>
-              </div>
-            </div>
-            <div class="linkType">
-              <div class="linkTypeName">Прыжок через два перекрёстка → тонкая связь 1</div>
-              <div class="tinyRow">
-                <label>sigma <input id="link-jump2-sigma" type="number" step="0.01" min="0" value="0.04"></label>
-                <label>threshold <input id="link-jump2-threshold" type="number" step="0.01" min="0.01" max="0.99" value="0.30"></label>
-              </div>
-            </div>
-            <div class="linkType">
-              <div class="linkTypeName">Огейма → диагональная тонкая связь 1</div>
-              <div class="tinyRow">
-                <label>sigma <input id="link-ogeima-sigma" type="number" step="0.01" min="0" value="0.04"></label>
-                <label>threshold <input id="link-ogeima-threshold" type="number" step="0.01" min="0.01" max="0.99" value="0.30"></label>
-              </div>
-            </div>
           </div>
         </div>
       </section>
@@ -445,6 +339,7 @@
         this.size = size;
         this.stones = [];
         this.history = [];
+        this.lastMove = null;
         this.onIntersection = null;
         this.viewMode = 'standard';
         this.setSize(size);
@@ -462,6 +357,7 @@
         this.size = Number(size);
         this.stones = Array(this.size * this.size).fill(0);
         this.history = [];
+        this.lastMove = null;
         this.positionHistory = [this.positionKey()];
         this.captures = { 1: 0, 2: 0 };
         this.draw();
@@ -588,6 +484,7 @@
 
         const before = this.stones.slice();
         const capturesBefore = { ...this.captures };
+        const previousLastMove = this.lastMove ? { ...this.lastMove } : null;
         this.setStone(x, y, stone);
 
         const opponent = stone === 1 ? 2 : 1;
@@ -616,7 +513,8 @@
         }
 
         this.captures[stone] += captured;
-        this.history.push({ x, y, stone, before, capturesBefore, captured });
+        this.history.push({ x, y, stone, before, capturesBefore, captured, previousLastMove });
+        this.lastMove = { x, y, stone };
         this.positionHistory.push(afterKey);
         this.draw();
         return { ok: true, captured };
@@ -627,6 +525,7 @@
         if (!move) return null;
         this.stones = move.before.slice();
         this.captures = { ...move.capturesBefore };
+        this.lastMove = move.previousLastMove ? { ...move.previousLastMove } : null;
         this.positionHistory.pop();
         this.draw();
         return move;
@@ -635,6 +534,7 @@
       reset() {
         this.stones.fill(0);
         this.history = [];
+        this.lastMove = null;
         this.positionHistory = [this.positionKey()];
         this.captures = { 1: 0, 2: 0 };
         this.draw();
@@ -765,6 +665,27 @@
             }
           }
         }
+
+        this.drawLastMoveMarker(pad, step);
+      }
+
+      drawLastMoveMarker(pad, step) {
+        if (!this.lastMove) return;
+        const { x, y } = this.lastMove;
+        if (!this.getStone(x, y)) return;
+        const c = this.ctx;
+        const cx = pad + x * step;
+        const cy = pad + y * step;
+        const radius = Math.max(3, step * 0.09);
+        c.save();
+        c.beginPath();
+        c.arc(cx, cy, radius, 0, Math.PI * 2);
+        c.fillStyle = '#32e875';
+        c.fill();
+        c.lineWidth = Math.max(1, step * 0.025);
+        c.strokeStyle = 'rgba(0, 55, 20, .72)';
+        c.stroke();
+        c.restore();
       }
 
       drawStone(cx, cy, radius, stone) {
@@ -1685,31 +1606,9 @@
       boardFacesBtn.classList.toggle('active', mode === 'faces');
     }
 
-    function bindLinkParamInputs() {
-      const ids = [
-        ['diagonal', 'link-diagonal-sigma', 'link-diagonal-threshold'],
-        ['jump', 'link-jump-sigma', 'link-jump-threshold'],
-        ['keima', 'link-keima-sigma', 'link-keima-threshold'],
-        ['jump2', 'link-jump2-sigma', 'link-jump2-threshold'],
-        ['ogeima', 'link-ogeima-sigma', 'link-ogeima-threshold']
-      ];
-      for (const [key, sigmaId, thresholdId] of ids) {
-        const sigmaInput = document.getElementById(sigmaId);
-        const thresholdInput = document.getElementById(thresholdId);
-        const apply = () => {
-          linkRenderSettings[key].sigmaFactor = Math.max(0.01, Number(sigmaInput.value) || LINK_PARAM_DEFS[key].sigmaFactor);
-          linkRenderSettings[key].threshold = Math.max(0.01, Math.min(0.99, Number(thresholdInput.value) || LINK_PARAM_DEFS[key].threshold));
-          if (board.viewMode === 'faces') board.draw();
-        };
-        sigmaInput.addEventListener('input', apply);
-        thresholdInput.addEventListener('input', apply);
-      }
-    }
-
     boardStandardBtn.addEventListener('click', () => setBoardViewMode('standard'));
     boardCleanBtn.addEventListener('click', () => setBoardViewMode('clean'));
     boardFacesBtn.addEventListener('click', () => setBoardViewMode('faces'));
-    bindLinkParamInputs();
     const sizeSelect = document.getElementById('size');
     const speedSelect = document.getElementById('speed');
     const gameMsg = document.getElementById('gameMsg');
@@ -1956,12 +1855,6 @@
     document.getElementById('findOpponent').addEventListener('click', startAutomatch);
     document.getElementById('cancelSearch').addEventListener('click', cancelAutomatch);
 
-    function updateSearchSummary() {
-      document.getElementById('searchSummary').innerHTML =
-        `Система времени: <b>бёёми</b> · Скорость: <b>${speedSelect.selectedOptions[0].text}</b><br>` +
-        `OGS назначит конкретные main time / период / число периодов после создания партии.`;
-    }
-    speedSelect.addEventListener('change', updateSearchSummary);
 
     document.getElementById('pass').addEventListener('click', async () => {
       if (gameMode === 'bot') {
@@ -2005,7 +1898,6 @@
 
     updateTurn();
     updateCaptures();
-    updateSearchSummary();
     requestAnimationFrame(() => board.draw());
     handleOgsCallback();
   </script>
