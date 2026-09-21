@@ -455,6 +455,74 @@
         return { stones, liberties };
       }
 
+      getStoneFromBoard(board, x, y) {
+        return board[y * this.size + x];
+      }
+
+      setStoneOnBoard(board, x, y, stone) {
+        board[y * this.size + x] = stone;
+      }
+
+      groupAtOnBoard(board, x, y) {
+        const color = this.getStoneFromBoard(board, x, y);
+        if (!color) return { stones: [], liberties: new Set() };
+        const todo = [[x, y]];
+        const seen = new Set([`${x},${y}`]);
+        const stones = [];
+        const liberties = new Set();
+        while (todo.length) {
+          const [cx, cy] = todo.pop();
+          stones.push([cx, cy]);
+          for (const [nx, ny] of this.neighbors(cx, cy)) {
+            const value = this.getStoneFromBoard(board, nx, ny);
+            if (value === 0) {
+              liberties.add(`${nx},${ny}`);
+            } else if (value === color) {
+              const key = `${nx},${ny}`;
+              if (!seen.has(key)) {
+                seen.add(key);
+                todo.push([nx, ny]);
+              }
+            }
+          }
+        }
+        return { stones, liberties };
+      }
+
+      canPlayLegally(x, y, stone) {
+        if (x < 0 || y < 0 || x >= this.size || y >= this.size) return false;
+        if (this.getStone(x, y) !== 0) return false;
+
+        const board = this.stones.slice();
+        this.setStoneOnBoard(board, x, y, stone);
+        const opponent = stone === 1 ? 2 : 1;
+        const checked = new Set();
+        for (const [nx, ny] of this.neighbors(x, y)) {
+          if (this.getStoneFromBoard(board, nx, ny) !== opponent) continue;
+          const key = `${nx},${ny}`;
+          if (checked.has(key)) continue;
+          const group = this.groupAtOnBoard(board, nx, ny);
+          for (const [gx, gy] of group.stones) checked.add(`${gx},${gy}`);
+          if (group.liberties.size === 0) {
+            for (const [gx, gy] of group.stones) this.setStoneOnBoard(board, gx, gy, 0);
+          }
+        }
+
+        if (this.groupAtOnBoard(board, x, y).liberties.size === 0) return false;
+        const afterKey = board.join('');
+        if (this.positionHistory.length >= 2 && afterKey === this.positionHistory[this.positionHistory.length - 2]) return false;
+        return true;
+      }
+
+      bonusLibertiesForGroup(group, color) {
+        const opponent = color === 1 ? 2 : 1;
+        for (const key of group.liberties) {
+          const [x, y] = key.split(',').map(Number);
+          if (!this.canPlayLegally(x, y, opponent)) return 1;
+        }
+        return 0;
+      }
+
       removeGroup(group) {
         for (const [x, y] of group.stones) this.setStone(x, y, 0);
         return group.stones.length;
@@ -562,7 +630,8 @@
             const key = `${x},${y}`;
             if (visited.has(key)) continue;
             const group = this.groupAt(x, y);
-            const liberties = group.liberties.size;
+            const bonusLiberties = this.bonusLibertiesForGroup(group, stone);
+            const liberties = group.liberties.size + bonusLiberties;
             const state = this.faceStateFromLiberties(liberties);
             const ordered = group.stones.slice().sort((a, b) => (a[1] - b[1]) || (a[0] - b[0]));
             const seed = this.hashString(ordered.map(([gx, gy]) => `${gx},${gy}`).join('|'));
@@ -583,6 +652,7 @@
               stones: ordered,
               color: stone,
               liberties,
+              bonusLiberties,
               state,
               anchor,
               faceOffset
@@ -838,6 +908,44 @@
         return null;
       }
 
+      linkId(groupA, groupB) {
+        const a = Math.min(groupA, groupB);
+        const b = Math.max(groupA, groupB);
+        return `${a}:${b}`;
+      }
+
+      distancePointToSegment(point, a, b) {
+        const vx = b[0] - a[0];
+        const vy = b[1] - a[1];
+        const len2 = vx * vx + vy * vy || 1;
+        let t = ((point[0] - a[0]) * vx + (point[1] - a[1]) * vy) / len2;
+        t = Math.max(0, Math.min(1, t));
+        const qx = a[0] + vx * t;
+        const qy = a[1] + vy * t;
+        return Math.hypot(point[0] - qx, point[1] - qy);
+      }
+
+      linkBlockedByStone(link) {
+        const [ax, ay] = link.from;
+        const [bx, by] = link.to;
+        for (let y = 0; y < this.size; y++) {
+          for (let x = 0; x < this.size; x++) {
+            const stone = this.getStone(x, y);
+            if (!stone) continue;
+            if ((x === ax && y === ay) || (x === bx && y === by)) continue;
+            const dist = this.distancePointToSegment([x, y], [ax, ay], [bx, by]);
+            if (dist <= 0.22) {
+              const vx = bx - ax;
+              const vy = by - ay;
+              const len2 = vx * vx + vy * vy || 1;
+              const t = ((x - ax) * vx + (y - ay) * vy) / len2;
+              if (t > 0 && t < 1) return true;
+            }
+          }
+        }
+        return false;
+      }
+
       buildThinLinks(groups) {
         const stoneEntries = [];
         for (const group of groups) {
@@ -846,8 +954,7 @@
           }
         }
 
-        const links = [];
-        const used = new Set();
+        const bestByPair = new Map();
         for (let i = 0; i < stoneEntries.length; i++) {
           for (let j = i + 1; j < stoneEntries.length; j++) {
             const a = stoneEntries[i];
@@ -856,22 +963,27 @@
             if (a.groupId === b.groupId) continue;
             const type = this.detectLinkType(b.x - a.x, b.y - a.y);
             if (!type) continue;
-            const key = [type, a.color, Math.min(a.x, b.x), Math.min(a.y, b.y), Math.max(a.x, b.x), Math.max(a.y, b.y)].join(':');
-            if (used.has(key)) continue;
-            used.add(key);
             const dx = b.x - a.x;
             const dy = b.y - a.y;
-            links.push({
+            const link = {
               type,
               color: a.color,
               from: [a.x, a.y],
               to: [b.x, b.y],
+              fromGroupId: a.groupId,
+              toGroupId: b.groupId,
               length: Math.hypot(dx, dy)
-            });
+            };
+            if (this.linkBlockedByStone(link)) continue;
+            const pairKey = this.linkId(a.groupId, b.groupId);
+            const prev = bestByPair.get(pairKey);
+            if (!prev || link.length < prev.length - 1e-6 || (Math.abs(link.length - prev.length) <= 1e-6 && `${link.from[0]},${link.from[1]}:${link.to[0]},${link.to[1]}` < `${prev.from[0]},${prev.from[1]}:${prev.to[0]},${prev.to[1]}`)) {
+              bestByPair.set(pairKey, link);
+            }
           }
         }
 
-        return this.resolveLinkConflicts(links);
+        return this.resolveLinkConflicts(Array.from(bestByPair.values()));
       }
 
       orientation(a, b, c) {
@@ -1009,9 +1121,9 @@
             const d2 = dx * dx + dy * dy;
 
             // Связь расширяется возле камней и плавно сужается к середине.
-            // t=0/1 -> полная sigma, t=0.5 -> около 46% от sigma.
+            // t=0/1 -> около 2x sigma, t=0.5 -> около 46% от sigma.
             const edge = Math.abs(2 * t - 1);
-            const taper = 0.46 + 0.54 * Math.pow(edge, 1.55);
+            const taper = 0.46 + 1.54 * Math.pow(edge, 1.55);
             const localSigma = Math.max(step * 0.012, sigma * taper);
             const localInvTwoSigma2 = 1 / (2 * localSigma * localSigma);
             let a = (Math.exp(-d2 * localInvTwoSigma2) - (threshold - feather)) / (feather * 2);
