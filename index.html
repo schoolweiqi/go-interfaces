@@ -276,36 +276,36 @@
             <div class="linkType">
               <div class="linkTypeName">Ход наискосок → тонкая связь 5</div>
               <div class="tinyRow">
-                <label>sigma <input id="link-diagonal-sigma" type="number" step="0.01" min="0" value="0.17"></label>
-                <label>threshold <input id="link-diagonal-threshold" type="number" step="0.01" min="0.01" max="0.99" value="0.28"></label>
+                <label>sigma <input id="link-diagonal-sigma" type="number" step="0.01" min="0" value="0.12"></label>
+                <label>threshold <input id="link-diagonal-threshold" type="number" step="0.01" min="0.01" max="0.99" value="0.30"></label>
               </div>
             </div>
             <div class="linkType">
               <div class="linkTypeName">Прыжок через перекрёсток → тонкая связь 3</div>
               <div class="tinyRow">
-                <label>sigma <input id="link-jump-sigma" type="number" step="0.01" min="0" value="0.13"></label>
-                <label>threshold <input id="link-jump-threshold" type="number" step="0.01" min="0.01" max="0.99" value="0.31"></label>
+                <label>sigma <input id="link-jump-sigma" type="number" step="0.01" min="0" value="0.08"></label>
+                <label>threshold <input id="link-jump-threshold" type="number" step="0.01" min="0.01" max="0.99" value="0.30"></label>
               </div>
             </div>
             <div class="linkType">
               <div class="linkTypeName">Кейма → диагональная тонкая связь 3</div>
               <div class="tinyRow">
-                <label>sigma <input id="link-keima-sigma" type="number" step="0.01" min="0" value="0.13"></label>
-                <label>threshold <input id="link-keima-threshold" type="number" step="0.01" min="0.01" max="0.99" value="0.31"></label>
+                <label>sigma <input id="link-keima-sigma" type="number" step="0.01" min="0" value="0.08"></label>
+                <label>threshold <input id="link-keima-threshold" type="number" step="0.01" min="0.01" max="0.99" value="0.30"></label>
               </div>
             </div>
             <div class="linkType">
               <div class="linkTypeName">Прыжок через два перекрёстка → тонкая связь 1</div>
               <div class="tinyRow">
-                <label>sigma <input id="link-jump2-sigma" type="number" step="0.01" min="0" value="0.10"></label>
-                <label>threshold <input id="link-jump2-threshold" type="number" step="0.01" min="0.01" max="0.99" value="0.36"></label>
+                <label>sigma <input id="link-jump2-sigma" type="number" step="0.01" min="0" value="0.04"></label>
+                <label>threshold <input id="link-jump2-threshold" type="number" step="0.01" min="0.01" max="0.99" value="0.30"></label>
               </div>
             </div>
             <div class="linkType">
               <div class="linkTypeName">Огейма → диагональная тонкая связь 1</div>
               <div class="tinyRow">
-                <label>sigma <input id="link-ogeima-sigma" type="number" step="0.01" min="0" value="0.10"></label>
-                <label>threshold <input id="link-ogeima-threshold" type="number" step="0.01" min="0.01" max="0.99" value="0.36"></label>
+                <label>sigma <input id="link-ogeima-sigma" type="number" step="0.01" min="0" value="0.04"></label>
+                <label>threshold <input id="link-ogeima-threshold" type="number" step="0.01" min="0.01" max="0.99" value="0.30"></label>
               </div>
             </div>
           </div>
@@ -346,11 +346,11 @@
 
 
     const LINK_PARAM_DEFS = {
-      diagonal: { label: 'Ход наискосок', sigmaFactor: 0.17, threshold: 0.28 },
-      jump: { label: 'Прыжок через перекрёсток', sigmaFactor: 0.13, threshold: 0.31 },
-      keima: { label: 'Кейма', sigmaFactor: 0.13, threshold: 0.31 },
-      jump2: { label: 'Прыжок через два перекрёстка', sigmaFactor: 0.10, threshold: 0.36 },
-      ogeima: { label: 'Огейма', sigmaFactor: 0.10, threshold: 0.36 }
+      diagonal: { label: 'Ход наискосок', sigmaFactor: 0.12, threshold: 0.30 },
+      jump: { label: 'Прыжок через перекрёсток', sigmaFactor: 0.08, threshold: 0.30 },
+      keima: { label: 'Кейма', sigmaFactor: 0.08, threshold: 0.30 },
+      jump2: { label: 'Прыжок через два перекрёстка', sigmaFactor: 0.04, threshold: 0.30 },
+      ogeima: { label: 'Огейма', sigmaFactor: 0.04, threshold: 0.30 }
     };
     const linkRenderSettings = JSON.parse(JSON.stringify(LINK_PARAM_DEFS));
 
@@ -629,8 +629,8 @@
         if (showFaces) {
           const groups = this.buildGroups();
           const links = this.buildThinLinks(groups);
-          this.drawMetaballGroups(groups, pad, step, cssSize);
           this.drawThinLinks(links, pad, step, cssSize);
+          this.drawMetaballGroups(groups, pad, step, cssSize);
           if (faceSpriteReady) this.drawGroupFaces(groups, pad, step);
         } else {
           for (let y = 0; y < this.size; y++) {
@@ -859,10 +859,96 @@
             const key = [type, a.color, Math.min(a.x, b.x), Math.min(a.y, b.y), Math.max(a.x, b.x), Math.max(a.y, b.y)].join(':');
             if (used.has(key)) continue;
             used.add(key);
-            links.push({ type, color: a.color, from: [a.x, a.y], to: [b.x, b.y] });
+            const dx = b.x - a.x;
+            const dy = b.y - a.y;
+            links.push({
+              type,
+              color: a.color,
+              from: [a.x, a.y],
+              to: [b.x, b.y],
+              length: Math.hypot(dx, dy)
+            });
           }
         }
-        return links;
+
+        return this.resolveLinkConflicts(links);
+      }
+
+      orientation(a, b, c) {
+        return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+      }
+
+      pointOnSegment(p, a, b, eps = 1e-9) {
+        return p[0] >= Math.min(a[0], b[0]) - eps && p[0] <= Math.max(a[0], b[0]) + eps &&
+               p[1] >= Math.min(a[1], b[1]) - eps && p[1] <= Math.max(a[1], b[1]) + eps &&
+               Math.abs(this.orientation(a, b, p)) <= eps;
+      }
+
+      linksIntersect(a, b) {
+        const p1 = a.from, p2 = a.to, q1 = b.from, q2 = b.to;
+        const eps = 1e-9;
+
+        // Общий камень не считаем пересечением: от одного камня могут законно
+        // отходить несколько связей разных типов и направлений.
+        const samePoint = (u, v) => Math.abs(u[0] - v[0]) <= eps && Math.abs(u[1] - v[1]) <= eps;
+        if (samePoint(p1, q1) || samePoint(p1, q2) || samePoint(p2, q1) || samePoint(p2, q2)) return false;
+
+        const o1 = this.orientation(p1, p2, q1);
+        const o2 = this.orientation(p1, p2, q2);
+        const o3 = this.orientation(q1, q2, p1);
+        const o4 = this.orientation(q1, q2, p2);
+
+        const proper = ((o1 > eps && o2 < -eps) || (o1 < -eps && o2 > eps)) &&
+                       ((o3 > eps && o4 < -eps) || (o3 < -eps && o4 > eps));
+        if (proper) return true;
+
+        if (Math.abs(o1) <= eps && this.pointOnSegment(q1, p1, p2, eps)) return true;
+        if (Math.abs(o2) <= eps && this.pointOnSegment(q2, p1, p2, eps)) return true;
+        if (Math.abs(o3) <= eps && this.pointOnSegment(p1, q1, q2, eps)) return true;
+        if (Math.abs(o4) <= eps && this.pointOnSegment(p2, q1, q2, eps)) return true;
+        return false;
+      }
+
+      resolveLinkConflicts(links) {
+        // Правила приоритетов:
+        // 1) разный цвет + одинаковая длина -> обе связи исчезают;
+        // 2) разный цвет + разная длина -> остаётся более короткая;
+        // 3) одинаковый цвет + пересечение -> остаётся более короткая;
+        // Если длины одинаковы у связей одного цвета, оставляем одну детерминированно.
+        const remove = new Set();
+        const eps = 1e-6;
+
+        for (let i = 0; i < links.length; i++) {
+          for (let j = i + 1; j < links.length; j++) {
+            if (remove.has(i) && remove.has(j)) continue;
+            const a = links[i];
+            const b = links[j];
+            if (!this.linksIntersect(a, b)) continue;
+
+            const sameLength = Math.abs(a.length - b.length) <= eps;
+            if (a.color !== b.color) {
+              if (sameLength) {
+                remove.add(i);
+                remove.add(j);
+              } else if (a.length < b.length) {
+                remove.add(j);
+              } else {
+                remove.add(i);
+              }
+            } else {
+              if (sameLength) {
+                // Детерминированно оставляем более раннюю связь.
+                remove.add(j);
+              } else if (a.length < b.length) {
+                remove.add(j);
+              } else {
+                remove.add(i);
+              }
+            }
+          }
+        }
+
+        return links.filter((_, index) => !remove.has(index));
       }
 
       drawThinLinks(links, pad, step, cssSize) {
@@ -906,7 +992,6 @@
         const vx = bx - ax;
         const vy = by - ay;
         const len2 = vx * vx + vy * vy || 1;
-        const invTwoSigma2 = 1 / (2 * sigma * sigma);
         const feather = 0.055;
 
         for (let py = 0; py < mh; py++) {
@@ -922,7 +1007,14 @@
             const dx = x - qx;
             const dy = y - qy;
             const d2 = dx * dx + dy * dy;
-            let a = (Math.exp(-d2 * invTwoSigma2) - (threshold - feather)) / (feather * 2);
+
+            // Связь расширяется возле камней и плавно сужается к середине.
+            // t=0/1 -> полная sigma, t=0.5 -> около 46% от sigma.
+            const edge = Math.abs(2 * t - 1);
+            const taper = 0.46 + 0.54 * Math.pow(edge, 1.55);
+            const localSigma = Math.max(step * 0.012, sigma * taper);
+            const localInvTwoSigma2 = 1 / (2 * localSigma * localSigma);
+            let a = (Math.exp(-d2 * localInvTwoSigma2) - (threshold - feather)) / (feather * 2);
             a = Math.max(0, Math.min(1, a));
             a = a * a * (3 - 2 * a);
             const idx = (py * mw + px) * 4;
