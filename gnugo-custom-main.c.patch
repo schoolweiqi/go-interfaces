@@ -1,16 +1,48 @@
 --- interface/main.c
 +++ interface/main.c
 @@
+ char *play(int seed, char *board)
+ {
+@@
+   return get_sgf_content();
+ }
++
++/* Same SGF interface as play(), but applies GNU Go's native reading level.
++ * The documented level range for this UI is 0..10.
++ */
++char *play_level(int seed, int requested_level, char *board)
++{
++  Gameinfo gameinfo;
++  SGFTree sgftree;
++  int level = requested_level;
++
++  if (level < 0) level = 0;
++  if (level > 10) level = 10;
++
++  sgftree_clear(&sgftree);
++  gameinfo_clear(&gameinfo);
++  init_gnugo(DEFAULT_MEMORY, seed);
++  set_depth_values(level);
++
++  setsgffile(board);
++  if (!sgftree_readfile(&sgftree, "-"))
++    return "";
++  if (gameinfo_play_sgftree_rot(&gameinfo, &sgftree, NULL, 0) == EMPTY)
++    return "";
++
++  gameinfo.game_record = sgftree;
++  outfilename[0] = '*';
++  set_in_memory_content();
++  load_and_analyze_sgf_file(&gameinfo);
++  return get_sgf_content();
++}
+@@
  float score(int seed, char *board)
  {
 @@
    return load_and_score_sgf_file(&sgftree, &gameinfo, "");
  }
 +
-+/* Browser wrapper for end-of-game scoring.
-+ * GNU Go's aftermath mode self-plays the cleanup and then computes
-+ * a more accurate final score. Positive = White ahead; negative = Black.
-+ */
 +float score_final(int seed, char *board)
 +{
 +  Gameinfo gameinfo;
@@ -30,4 +62,5 @@
 +  return load_and_score_sgf_file(&sgftree, &gameinfo, "aftermath");
 +}
 
-Build export list should include `_score_final` in addition to `_get_version`, `_play`, `_score`.
+Build export list:
+  EXPORTED_FUNCTIONS="['_get_version','_play','_play_level','_score','_score_final']"

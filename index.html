@@ -219,6 +219,22 @@
             <option value="9">9 × 9</option>
           </select>
         </label>
+        <label>
+          Сила GNU Go
+          <select id="botLevel">
+            <option value="0">0 — самая слабая</option>
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+            <option value="6">6</option>
+            <option value="7">7</option>
+            <option value="8">8</option>
+            <option value="9">9</option>
+            <option value="10" selected>10 — максимальная</option>
+          </select>
+        </label>
         <div class="row">
           <label>
             Ваш цвет
@@ -1269,10 +1285,10 @@
         });
       }
 
-      async generateMove(sgf, seed = 0) {
+      async generateMove(sgf, seed = 0, level = 10) {
         await this.init();
-        const response = await this.request('play', { sgf, seed });
-        return response.sgf;
+        const response = await this.request('play', { sgf, seed, level });
+        return response;
       }
 
       async score(sgf, seed = 0) {
@@ -1620,6 +1636,7 @@
     let turn = 1; // 1 = black, 2 = white
     const botEngine = new GnuGoBotEngine();
     const botSizeSelect = document.getElementById('botSize');
+    const botLevelSelect = document.getElementById('botLevel');
     const botColorSelect = document.getElementById('botColor');
     const botKomiInput = document.getElementById('botKomi');
     const startBotButton = document.getElementById('startBotGame');
@@ -1635,6 +1652,8 @@
       humanColor: 1,
       botColor: 2,
       komi: 6.5,
+      level: 10,
+      levelApplied: false,
       moves: [],
       consecutivePasses: 0
     };
@@ -1700,7 +1719,9 @@
       setBotThinking(true, 'GNU Go думает…');
       try {
         const beforeCount = botGame.moves.length;
-        const outputSgf = await botEngine.generateMove(buildBotSgf(), 0);
+        const moveResponse = await botEngine.generateMove(buildBotSgf(), 0, botGame.level);
+        const outputSgf = moveResponse.sgf;
+        botGame.levelApplied = moveResponse.levelApplied === true;
         const last = getLastSgfMove(outputSgf);
         if (!last) throw new Error('GNU Go не вернул ход');
         if (last.color !== botGame.botColor) throw new Error('GNU Go вернул ход не того цвета');
@@ -1720,7 +1741,7 @@
         }
         turn = botGame.humanColor;
         updateTurn();
-        botStatus.textContent = `Ваш ход (${colorName(botGame.humanColor)}).`;
+        botStatus.textContent = `Ваш ход (${colorName(botGame.humanColor)}). Уровень: ${botGame.level}${botGame.levelApplied ? '' : ' (web-сборка использует 10)'}.`;
       } catch (error) {
         botStatus.textContent = `Ошибка GNU Go: ${error.message}`;
         gameMsg.textContent = `Ошибка GNU Go: ${error.message}`;
@@ -1740,6 +1761,8 @@
       botGame.botColor = botGame.humanColor === 1 ? 2 : 1;
       botGame.komi = Number(botKomiInput.value);
       if (!Number.isFinite(botGame.komi)) botGame.komi = 6.5;
+      botGame.level = Math.max(0, Math.min(10, Number(botLevelSelect.value) || 0));
+      botGame.levelApplied = false;
       board.setSize(Number(botSizeSelect.value));
       turn = 1;
       updateTurn();
@@ -1751,8 +1774,9 @@
       setBotThinking(true, 'Загружаю GNU Go WebAssembly…');
       try {
         const info = await botEngine.init();
-        botStatus.textContent = `GNU Go ${info.version || ''} готов. ${botGame.humanColor === 1 ? 'Ваш ход.' : 'GNU Go делает первый ход…'}`;
-        gameMsg.textContent = `Партия с GNU Go: вы играете ${colorName(botGame.humanColor)}, коми ${botGame.komi}.`;
+        const levelText = info.levelSupported ? `уровень ${botGame.level}` : 'уровень 10 (ограничение текущей web-сборки)';
+        botStatus.textContent = `GNU Go ${info.version || ''} готов · ${levelText}. ${botGame.humanColor === 1 ? 'Ваш ход.' : 'GNU Go делает первый ход…'}`;
+        gameMsg.textContent = `Партия с GNU Go: вы играете ${colorName(botGame.humanColor)}, коми ${botGame.komi}, выбран уровень ${botGame.level}.`;
       } catch (error) {
         botGame.active = false;
         gameMode = 'local';

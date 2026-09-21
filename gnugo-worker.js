@@ -47,12 +47,20 @@ self.onmessage = async (event) => {
   try {
     const Module = await initEngine();
     if (msg.type === 'init') {
-      self.postMessage({ id, type: 'ready', ok: true, version: versionOf(Module), exactFinalScore: false });
+      self.postMessage({ id, type: 'ready', ok: true, version: versionOf(Module), exactFinalScore: !!Module._score_final, levelSupported: !!Module._play_level });
       return;
     }
     if (msg.type === 'play') {
-      const sgf = Module.ccall('play', 'string', ['number', 'string'], [Number(msg.seed || 0), String(msg.sgf || '')]);
-      self.postMessage({ id, type: 'play', ok: true, sgf });
+      const level = Math.max(0, Math.min(10, Number(msg.level ?? 10)));
+      let sgf;
+      let levelApplied = false;
+      if (Module._play_level) {
+        sgf = Module.ccall('play_level', 'string', ['number', 'number', 'string'], [Number(msg.seed || 0), level, String(msg.sgf || '')]);
+        levelApplied = true;
+      } else {
+        sgf = Module.ccall('play', 'string', ['number', 'string'], [Number(msg.seed || 0), String(msg.sgf || '')]);
+      }
+      self.postMessage({ id, type: 'play', ok: true, sgf, requestedLevel: level, levelApplied });
       return;
     }
     if (msg.type === 'score') {
