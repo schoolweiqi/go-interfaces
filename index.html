@@ -516,11 +516,12 @@
 
       bonusLibertiesForGroup(group, color) {
         const opponent = color === 1 ? 2 : 1;
+        let bonus = 0;
         for (const key of group.liberties) {
           const [x, y] = key.split(',').map(Number);
-          if (!this.canPlayLegally(x, y, opponent)) return 1;
+          if (!this.canPlayLegally(x, y, opponent)) bonus += 1;
         }
-        return 0;
+        return bonus;
       }
 
       removeGroup(group) {
@@ -922,25 +923,47 @@
         t = Math.max(0, Math.min(1, t));
         const qx = a[0] + vx * t;
         const qy = a[1] + vy * t;
-        return Math.hypot(point[0] - qx, point[1] - qy);
+        return { distance: Math.hypot(point[0] - qx, point[1] - qy), t };
+      }
+
+      linkCorridorWidth(type) {
+        if (type === 'diagonal') return 0.16;
+        if (type === 'jump' || type === 'jump2') return 0.18;
+        if (type === 'keima' || type === 'ogeima') return 0.62;
+        return 0.22;
+      }
+
+      isStoneBlockingLink(link, x, y, stoneColor) {
+        const [ax, ay] = link.from;
+        const [bx, by] = link.to;
+        if ((x === ax && y === ay) || (x === bx && y === by)) return false;
+
+        const minX = Math.min(ax, bx);
+        const maxX = Math.max(ax, bx);
+        const minY = Math.min(ay, by);
+        const maxY = Math.max(ay, by);
+        const { distance, t } = this.distancePointToSegment([x, y], [ax, ay], [bx, by]);
+        if (t <= 0.03 || t >= 0.97) return false;
+
+        // Общее правило: если на пути связи стоит камень/цепочка, связь исчезает.
+        if (distance <= this.linkCorridorWidth(link.type)) return true;
+
+        // Дополнительное правило для кеймы и огеймы:
+        // если внутри прямоугольника пути находятся камни другого цвета,
+        // связь не рисуем, даже если центр камня не попал точно на ось сегмента.
+        if ((link.type === 'keima' || link.type === 'ogeima') && stoneColor !== link.color) {
+          if (x >= minX && x <= maxX && y >= minY && y <= maxY) return true;
+        }
+
+        return false;
       }
 
       linkBlockedByStone(link) {
-        const [ax, ay] = link.from;
-        const [bx, by] = link.to;
         for (let y = 0; y < this.size; y++) {
           for (let x = 0; x < this.size; x++) {
             const stone = this.getStone(x, y);
             if (!stone) continue;
-            if ((x === ax && y === ay) || (x === bx && y === by)) continue;
-            const dist = this.distancePointToSegment([x, y], [ax, ay], [bx, by]);
-            if (dist <= 0.22) {
-              const vx = bx - ax;
-              const vy = by - ay;
-              const len2 = vx * vx + vy * vy || 1;
-              const t = ((x - ax) * vx + (y - ay) * vy) / len2;
-              if (t > 0 && t < 1) return true;
-            }
+            if (this.isStoneBlockingLink(link, x, y, stone)) return true;
           }
         }
         return false;
