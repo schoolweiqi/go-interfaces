@@ -28,7 +28,7 @@
     main {
       display: grid;
       grid-template-columns: 300px minmax(420px, 1fr);
-      grid-template-areas: "login board" "setup board" "controls board";
+      grid-template-areas: "login board" "setup board" "bot board" "controls board";
       gap: 16px;
       padding: 16px;
       max-width: 1250px;
@@ -43,6 +43,7 @@
     }
     .login { grid-area: login; }
     .setup { grid-area: setup; }
+    .bot { grid-area: bot; }
     .controls { grid-area: controls; }
     .boardWrap {
       grid-area: board;
@@ -195,10 +196,32 @@
       font-size: 12px;
       padding: 0 8px;
     }
+    .botStatusBox {
+      padding: 10px 11px;
+      border-radius: 8px;
+      background: #17191b;
+      border: 1px solid #34383d;
+      margin: 4px 0 10px;
+      font-size: 12px;
+      line-height: 1.45;
+      color: #c9ced3;
+    }
+    .botScore {
+      margin-top: 10px;
+      padding: 11px;
+      border-radius: 8px;
+      background: #17191b;
+      border: 1px solid #4a4031;
+      color: #e9c98f;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .botScore[hidden] { display: none; }
+    .botThinking { opacity: .75; }
     @media (max-width: 820px) {
       main {
         grid-template-columns: 1fr;
-        grid-template-areas: "login" "setup" "controls" "board";
+        grid-template-areas: "login" "setup" "bot" "controls" "board";
       }
       canvas { width: 100%; }
       .boardWrap { align-items: stretch; flex-direction: column; }
@@ -250,6 +273,36 @@
         <button id="cancelSearch" class="secondary" hidden>Отменить поиск</button>
         <button id="newGame" class="secondary">Локальная тестовая партия</button>
         <div class="msg" id="gameMsg">Войдите в OGS для автоматического поиска. Локальная доска доступна всегда.</div>
+      </section>
+
+      <section class="panel bot">
+        <h2>Игра с GNU Go</h2>
+        <p class="muted">Бот работает в браузере через WebAssembly. Для первого запуска требуется загрузка движка GNU Go.</p>
+        <label>
+          Размер доски
+          <select id="botSize">
+            <option value="19" selected>19 × 19</option>
+            <option value="13">13 × 13</option>
+            <option value="9">9 × 9</option>
+          </select>
+        </label>
+        <div class="row">
+          <label>
+            Ваш цвет
+            <select id="botColor">
+              <option value="1" selected>Чёрные</option>
+              <option value="2">Белые</option>
+            </select>
+          </label>
+          <label>
+            Коми
+            <input id="botKomi" type="number" step="0.5" value="6.5">
+          </label>
+        </div>
+        <button id="startBotGame">Играть с GNU Go</button>
+        <button id="stopBotGame" class="secondary" hidden>Завершить игру с ботом</button>
+        <div class="botStatusBox" id="botStatus">GNU Go ещё не загружен.</div>
+        <div class="botScore" id="botScore" hidden></div>
       </section>
 
       <section class="panel controls">
@@ -1251,6 +1304,89 @@
       }
     }
 
+    const GNU_GO_WORKER_URL = 'gnugo-worker.js';
+
+    class GnuGoBotEngine {
+      constructor(workerUrl = GNU_GO_WORKER_URL) {
+        this.workerUrl = workerUrl;
+        this.worker = null;
+        this.seq = 1;
+        this.pending = new Map();
+        this.readyInfo = null;
+      }
+
+      async init() {
+        if (this.readyInfo) return this.readyInfo;
+        if (!this.worker) {
+          this.worker = new Worker(this.workerUrl);
+          this.worker.addEventListener('message', (event) => {
+            const message = event.data || {};
+            if (message.type === 'ready') this.readyInfo = message;
+            if (!message.id) return;
+            const item = this.pending.get(message.id);
+            if (!item) return;
+            this.pending.delete(message.id);
+            if (message.ok === false) item.reject(new Error(message.error || 'GNU Go error'));
+            else item.resolve(message);
+          });
+          this.worker.addEventListener('error', (event) => {
+            for (const item of this.pending.values()) item.reject(new Error(event.message || 'GNU Go worker error'));
+            this.pending.clear();
+          });
+        }
+        const response = await this.request('init', {});
+        this.readyInfo = response;
+        return response;
+      }
+
+      request(type, payload = {}) {
+        return new Promise((resolve, reject) => {
+          if (!this.worker) return reject(new Error('GNU Go worker not started'));
+          const id = this.seq++;
+          this.pending.set(id, { resolve, reject });
+          this.worker.postMessage({ id, type, ...payload });
+        });
+      }
+
+      async generateMove(sgf, seed = 0) {
+        await this.init();
+        const response = await this.request('play', { sgf, seed });
+        return response.sgf;
+      }
+
+      async score(sgf, seed = 0) {
+        await this.init();
+        return this.request('score', { sgf, seed });
+      }
+
+      terminate() {
+        if (this.worker) this.worker.terminate();
+        this.worker = null;
+        this.readyInfo = null;
+        this.pending.clear();
+      }
+    }
+
+    function sgfCoord(x, y) {
+      return String.fromCharCode(97 + x) + String.fromCharCode(97 + y);
+    }
+
+    function parseSgfMove(coord, size) {
+      if (!coord || (coord.toLowerCase() === 'tt' && size <= 19)) return { pass: true };
+      if (!/^[a-z]{2}$/i.test(coord)) throw new Error(`Некорректная SGF-координата GNU Go: ${coord}`);
+      const x = coord.toLowerCase().charCodeAt(0) - 97;
+      const y = coord.toLowerCase().charCodeAt(1) - 97;
+      if (x < 0 || y < 0 || x >= size || y >= size) throw new Error(`GNU Go вернул ход вне доски: ${coord}`);
+      return { pass: false, x, y };
+    }
+
+    function getLastSgfMove(sgf) {
+      const matches = [...String(sgf).matchAll(/;([BW])\[([^\]]*)\]/g)];
+      if (!matches.length) return null;
+      const last = matches[matches.length - 1];
+      return { color: last[1] === 'B' ? 1 : 2, coord: last[2] };
+    }
+
     let ogsSocket = null;
     let ogsSocketReady = false;
     let activeAutomatchUuid = null;
@@ -1367,6 +1503,7 @@
     }
 
     function startAutomatch() {
+      if (botGame && botGame.active) stopBotGame();
       if (!sessionStorage.getItem('ogs_access_token')) {
         document.getElementById('gameMsg').textContent = 'Сначала войдите в OGS.';
         return;
@@ -1582,6 +1719,168 @@
     const turnStone = document.getElementById('turnStone');
 
     let turn = 1; // 1 = black, 2 = white
+    const botEngine = new GnuGoBotEngine();
+    const botSizeSelect = document.getElementById('botSize');
+    const botColorSelect = document.getElementById('botColor');
+    const botKomiInput = document.getElementById('botKomi');
+    const startBotButton = document.getElementById('startBotGame');
+    const stopBotButton = document.getElementById('stopBotGame');
+    const botStatus = document.getElementById('botStatus');
+    const botScore = document.getElementById('botScore');
+
+    let gameMode = 'local'; // local | bot
+    const botGame = {
+      active: false,
+      ended: false,
+      thinking: false,
+      humanColor: 1,
+      botColor: 2,
+      komi: 6.5,
+      moves: [],
+      consecutivePasses: 0
+    };
+
+    function colorName(color) { return color === 1 ? 'чёрные' : 'белые'; }
+
+    function buildBotSgf() {
+      const header = `(;GM[1]FF[4]CA[UTF-8]AP[SchoolWeiqi-GoInterfaces]SZ[${board.size}]KM[${botGame.komi}]RU[Japanese]`;
+      const moves = botGame.moves.map(move => `;${move.color === 1 ? 'B' : 'W'}[${move.pass ? '' : sgfCoord(move.x, move.y)}]`).join('');
+      return header + moves + ')';
+    }
+
+    function setBotThinking(value, message = '') {
+      botGame.thinking = value;
+      startBotButton.disabled = value;
+      document.getElementById('pass').disabled = value;
+      if (message) botStatus.textContent = message;
+      document.body.classList.toggle('botThinking', value);
+    }
+
+    function formatGnuGoScore(value) {
+      const score = Number(value);
+      if (!Number.isFinite(score) || Math.abs(score) < 0.05) return '0 — дзёго';
+      // В GNU Go положительный float означает преимущество белых, отрицательный — чёрных.
+      return score > 0 ? `W+${score.toFixed(1)}` : `B+${Math.abs(score).toFixed(1)}`;
+    }
+
+    async function finishBotGame(reason = 'Два последовательных паса.') {
+      if (!botGame.active || botGame.ended) return;
+      botGame.ended = true;
+      setBotThinking(true, `${reason} GNU Go считает результат…`);
+      try {
+        const result = await botEngine.score(buildBotSgf(), 0);
+        const label = formatGnuGoScore(result.score);
+        botScore.hidden = false;
+        botScore.innerHTML = `<b>Результат GNU Go: ${label}</b><br>${result.exact ? 'Финальный подсчёт GNU Go.' : 'Подсчёт выполнен экспортированной функцией score() браузерной сборки GNU Go.'}`;
+        botStatus.textContent = `Партия закончена. ${label}`;
+        gameMsg.textContent = `Партия с GNU Go закончена: ${label}.`;
+      } catch (error) {
+        botStatus.textContent = `Не удалось посчитать результат: ${error.message}`;
+      } finally {
+        setBotThinking(false);
+      }
+    }
+
+    function applyBotPass(color) {
+      botGame.moves.push({ color, pass: true });
+      botGame.consecutivePasses += 1;
+      gameMsg.textContent = `${colorName(color)} пасуют.`;
+    }
+
+    function applyBotBoardMove(color, x, y) {
+      const result = board.playStone(x, y, color);
+      if (!result.ok) throw new Error(`Расхождение правил: GNU Go выбрал недопустимый ход ${sgfCoord(x, y)} (${result.reason})`);
+      botGame.moves.push({ color, x, y, pass: false });
+      botGame.consecutivePasses = 0;
+      updateCaptures();
+      return result;
+    }
+
+    async function requestGnuGoMove() {
+      if (!botGame.active || botGame.ended || turn !== botGame.botColor) return;
+      setBotThinking(true, 'GNU Go думает…');
+      try {
+        const beforeCount = botGame.moves.length;
+        const outputSgf = await botEngine.generateMove(buildBotSgf(), 0);
+        const last = getLastSgfMove(outputSgf);
+        if (!last) throw new Error('GNU Go не вернул ход');
+        if (last.color !== botGame.botColor) throw new Error('GNU Go вернул ход не того цвета');
+        // play() возвращает исходную SGF + один новый ход. Проверяем хотя бы последний ход.
+        const parsed = parseSgfMove(last.coord, board.size);
+        if (parsed.pass) {
+          applyBotPass(botGame.botColor);
+        } else {
+          applyBotBoardMove(botGame.botColor, parsed.x, parsed.y);
+          gameMsg.textContent = `GNU Go сыграл ${sgfCoord(parsed.x, parsed.y)}.`;
+        }
+        if (botGame.moves.length !== beforeCount + 1) throw new Error('Не удалось синхронизировать историю ходов GNU Go');
+
+        if (botGame.consecutivePasses >= 2) {
+          await finishBotGame();
+          return;
+        }
+        turn = botGame.humanColor;
+        updateTurn();
+        botStatus.textContent = `Ваш ход (${colorName(botGame.humanColor)}).`;
+      } catch (error) {
+        botStatus.textContent = `Ошибка GNU Go: ${error.message}`;
+        gameMsg.textContent = `Ошибка GNU Go: ${error.message}`;
+      } finally {
+        setBotThinking(false);
+      }
+    }
+
+    async function startBotGame() {
+      gameMode = 'bot';
+      botGame.active = true;
+      botGame.ended = false;
+      botGame.thinking = false;
+      botGame.moves = [];
+      botGame.consecutivePasses = 0;
+      botGame.humanColor = Number(botColorSelect.value);
+      botGame.botColor = botGame.humanColor === 1 ? 2 : 1;
+      botGame.komi = Number(botKomiInput.value);
+      if (!Number.isFinite(botGame.komi)) botGame.komi = 6.5;
+      board.setSize(Number(botSizeSelect.value));
+      turn = 1;
+      updateTurn();
+      updateCaptures();
+      botScore.hidden = true;
+      stopBotButton.hidden = false;
+      startBotButton.hidden = true;
+      document.getElementById('undo').disabled = true;
+      setBotThinking(true, 'Загружаю GNU Go WebAssembly…');
+      try {
+        const info = await botEngine.init();
+        botStatus.textContent = `GNU Go ${info.version || ''} готов. ${botGame.humanColor === 1 ? 'Ваш ход.' : 'GNU Go делает первый ход…'}`;
+        gameMsg.textContent = `Партия с GNU Go: вы играете ${colorName(botGame.humanColor)}, коми ${botGame.komi}.`;
+      } catch (error) {
+        botGame.active = false;
+        gameMode = 'local';
+        startBotButton.hidden = false;
+        stopBotButton.hidden = true;
+        document.getElementById('undo').disabled = false;
+        botStatus.textContent = `Не удалось загрузить GNU Go: ${error.message}`;
+        setBotThinking(false);
+        return;
+      }
+      setBotThinking(false);
+      if (botGame.botColor === 1) await requestGnuGoMove();
+    }
+
+    function stopBotGame() {
+      botGame.active = false;
+      botGame.ended = true;
+      botGame.thinking = false;
+      gameMode = 'local';
+      startBotButton.hidden = false;
+      stopBotButton.hidden = true;
+      startBotButton.disabled = false;
+      document.getElementById('undo').disabled = false;
+      document.getElementById('pass').disabled = false;
+      botStatus.textContent = 'Игра с GNU Go остановлена.';
+    }
+
 
     function updateTurn() {
       turnText.textContent = turn === 1 ? 'Ход чёрных' : 'Ход белых';
@@ -1598,7 +1897,29 @@
       updateTurn();
     }
 
-    board.onIntersection = (x, y) => {
+    board.onIntersection = async (x, y) => {
+      if (gameMode === 'bot') {
+        if (!botGame.active || botGame.ended) return;
+        if (botGame.thinking) return;
+        if (turn !== botGame.humanColor) {
+          gameMsg.textContent = 'Сейчас ход GNU Go.';
+          return;
+        }
+        const result = board.playStone(x, y, botGame.humanColor);
+        if (!result.ok) {
+          const messages = { occupied: 'Пересечение занято.', suicide: 'Самоубийственный ход запрещён.', ko: 'Нельзя немедленно повторить позицию ко.' };
+          gameMsg.textContent = messages[result.reason] || 'Этот ход невозможен.';
+          return;
+        }
+        botGame.moves.push({ color: botGame.humanColor, x, y, pass: false });
+        botGame.consecutivePasses = 0;
+        updateCaptures();
+        turn = botGame.botColor;
+        updateTurn();
+        await requestGnuGoMove();
+        return;
+      }
+
       const result = board.playStone(x, y, turn);
       if (!result.ok) {
         const messages = { occupied: 'Пересечение занято.', suicide: 'Самоубийственный ход запрещён.', ko: 'Нельзя немедленно повторить позицию ко.' };
@@ -1611,6 +1932,10 @@
     };
 
     sizeSelect.addEventListener('change', () => {
+      if (gameMode === 'bot' && botGame.active) {
+        gameMsg.textContent = 'Размер текущей партии с GNU Go менять нельзя. Настройка OGS применится к следующему поиску.';
+        return;
+      }
       board.setSize(Number(sizeSelect.value));
       turn = 1;
       updateTurn();
@@ -1619,6 +1944,8 @@
     });
 
     document.getElementById('newGame').addEventListener('click', () => {
+      if (botGame.active) stopBotGame();
+      gameMode = 'local';
       board.setSize(Number(sizeSelect.value));
       turn = 1;
       updateTurn();
@@ -1636,12 +1963,29 @@
     }
     speedSelect.addEventListener('change', updateSearchSummary);
 
-    document.getElementById('pass').addEventListener('click', () => {
+    document.getElementById('pass').addEventListener('click', async () => {
+      if (gameMode === 'bot') {
+        if (!botGame.active || botGame.ended || botGame.thinking) return;
+        if (turn !== botGame.humanColor) return;
+        applyBotPass(botGame.humanColor);
+        if (botGame.consecutivePasses >= 2) {
+          await finishBotGame();
+          return;
+        }
+        turn = botGame.botColor;
+        updateTurn();
+        await requestGnuGoMove();
+        return;
+      }
       gameMsg.textContent = turn === 1 ? 'Чёрные пасуют.' : 'Белые пасуют.';
       switchTurn();
     });
 
     document.getElementById('undo').addEventListener('click', () => {
+      if (gameMode === 'bot') {
+        gameMsg.textContent = 'Отмена хода в партии с GNU Go пока отключена.';
+        return;
+      }
       const undone = board.undo();
       if (!undone) {
         gameMsg.textContent = 'Ходов для отмены нет.';
@@ -1652,6 +1996,12 @@
       updateCaptures();
       gameMsg.textContent = 'Последний ход отменён вместе со снятыми камнями.';
     });
+
+    startBotButton.addEventListener('click', () => startBotGame().catch(error => {
+      botStatus.textContent = `Ошибка запуска: ${error.message}`;
+      setBotThinking(false);
+    }));
+    stopBotButton.addEventListener('click', stopBotGame);
 
     updateTurn();
     updateCaptures();

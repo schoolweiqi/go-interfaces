@@ -1,0 +1,33 @@
+--- interface/main.c
++++ interface/main.c
+@@
+ float score(int seed, char *board)
+ {
+@@
+   return load_and_score_sgf_file(&sgftree, &gameinfo, "");
+ }
++
++/* Browser wrapper for end-of-game scoring.
++ * GNU Go's aftermath mode self-plays the cleanup and then computes
++ * a more accurate final score. Positive = White ahead; negative = Black.
++ */
++float score_final(int seed, char *board)
++{
++  Gameinfo gameinfo;
++  SGFTree sgftree;
++
++  sgftree_clear(&sgftree);
++  gameinfo_clear(&gameinfo);
++  init_gnugo(DEFAULT_MEMORY, seed);
++  setsgffile(board);
++  if (!sgftree_readfile(&sgftree, "-"))
++    return 0.0;
++  if (gameinfo_play_sgftree_rot(&gameinfo, &sgftree, NULL, 0) == EMPTY)
++    return 0.0;
++  gameinfo.game_record = sgftree;
++  outfilename[0] = '*';
++  set_in_memory_content();
++  return load_and_score_sgf_file(&sgftree, &gameinfo, "aftermath");
++}
+
+Build export list should include `_score_final` in addition to `_get_version`, `_play`, `_score`.
