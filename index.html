@@ -63,7 +63,7 @@
     }
     .boardModes {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(4, 1fr);
       gap: 8px;
       width: 100%;
     }
@@ -80,6 +80,25 @@
       background: #b98645;
       border-color: #c49356;
       color: #15100a;
+    }
+    .influenceSettings {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #34383d;
+      border-radius: 9px;
+      background: #1b1e21;
+    }
+    .influenceSettings label {
+      margin: 0;
+      font-size: 12px;
+    }
+    .influenceSettings input {
+      min-height: 34px;
+      margin: 4px 0 0;
+      font-size: 12px;
     }
     canvas {
       width: min(82vh, 100%);
@@ -262,6 +281,15 @@
             <button id="boardStandard" class="active" type="button">стандарт</button>
             <button id="boardClean" type="button">чистое поле</button>
             <button id="boardFaces" type="button">лица</button>
+            <button id="boardInfluence" type="button">влияние</button>
+          </div>
+          <div class="influenceSettings" aria-label="Настройки влияния">
+            <label>Сила
+              <input id="influenceStrength" type="number" min="1" max="20" step="1" value="7">
+            </label>
+            <label>Интенсивность
+              <input id="influenceIntensity" type="number" min="0" max="255" step="1" value="180">
+            </label>
           </div>
         </div>
         <section class="panel controls">
@@ -358,6 +386,9 @@
         this.lastMove = null;
         this.onIntersection = null;
         this.viewMode = 'standard';
+        this.showInfluence = false;
+        this.influenceStrength = 7;
+        this.influenceIntensity = 180;
         this.setSize(size);
 
         canvas.addEventListener('click', (event) => this.handleClick(event));
@@ -366,6 +397,21 @@
 
       setViewMode(mode) {
         this.viewMode = ['standard', 'clean', 'faces'].includes(mode) ? mode : 'standard';
+        this.draw();
+      }
+
+      setInfluenceVisible(visible) {
+        this.showInfluence = Boolean(visible);
+        this.draw();
+      }
+
+      setInfluenceStrength(value) {
+        this.influenceStrength = Math.max(1, Math.min(20, Math.round(Number(value) || 7)));
+        this.draw();
+      }
+
+      setInfluenceIntensity(value) {
+        this.influenceIntensity = Math.max(0, Math.min(255, Math.round(Number(value) || 0)));
         this.draw();
       }
 
@@ -632,6 +678,112 @@
         return groups;
       }
 
+      computeInfluenceHeatmap() {
+        // Точная математическая модель featurecat/Influencie (Board.getInfluenceHeatmap()).
+        const heatmap = new Float64Array(this.size * this.size);
+        const degrade = 1.0 / this.influenceStrength;
+
+        for (let x = 0; x < this.size; x++) {
+          for (let y = 0; y < this.size; y++) {
+            const stone = this.getStone(x, y);
+            if (!stone) continue;
+            const initial = stone === 1 ? 1 : -1;
+            this.floodAddInfluence(
+              heatmap,
+              new Uint8Array(this.size * this.size),
+              x, y, x, y,
+              initial,
+              degrade
+            );
+          }
+        }
+
+        // Influencie делает это при включённом gradient mode,
+        // чтобы сами камни не создавали чрезмерно яркое пятно.
+        for (let x = 0; x < this.size; x++) {
+          for (let y = 0; y < this.size; y++) {
+            const i = this.index(x, y);
+            const stone = this.getStone(x, y);
+            if (stone === 1) {
+              heatmap[i] = Math.max(0, Math.min(heatmap[i], 0.5));
+            } else if (stone === 2) {
+              heatmap[i] = Math.min(0, Math.max(heatmap[i], -0.5));
+            }
+          }
+        }
+
+        // Оригинал переводит [-1, +1] в [0, 1] и обрезает края.
+        const normalized = new Float64Array(heatmap.length);
+        for (let i = 0; i < heatmap.length; i++) {
+          normalized[i] = Math.max(0, Math.min(1, (heatmap[i] + 1) / 2));
+        }
+        return normalized;
+      }
+
+      floodAddInfluence(heatmap, seen, originalX, originalY, x, y, initial, degrade) {
+        if (x < 0 || y < 0 || x >= this.size || y >= this.size) return;
+        const index = this.index(x, y);
+        if (seen[index]) return;
+
+        heatmap[index] += initial;
+        seen[index] = 1;
+
+        if (initial > 0) {
+          // Чёрное влияние не распространяется дальше через белый камень.
+          if (this.getStone(x, y) === 2) return;
+          initial = Math.max(0, initial - degrade);
+        } else {
+          // Белое влияние не распространяется дальше через чёрный камень.
+          if (this.getStone(x, y) === 1) return;
+          initial = Math.min(0, initial + degrade);
+        }
+
+        if (initial === 0) return;
+
+        // Сохраняем оригинальную направленную flood-fill геометрию Influencie.
+        if (originalX - x >= 0) this.floodAddInfluence(heatmap, seen, originalX, originalY, x - 1, y, initial, degrade);
+        if (originalX - x <= 0) this.floodAddInfluence(heatmap, seen, originalX, originalY, x + 1, y, initial, degrade);
+        if (originalY - y >= 0) this.floodAddInfluence(heatmap, seen, originalX, originalY, x, y - 1, initial, degrade);
+        if (originalY - y <= 0) this.floodAddInfluence(heatmap, seen, originalX, originalY, x, y + 1, initial, degrade);
+      }
+
+      drawInfluenceHeatmap(pad, step) {
+        if (!this.showInfluence || this.influenceIntensity <= 0) return;
+        const heatmap = this.computeInfluenceHeatmap();
+        const c = this.ctx;
+        const alphaConst = Math.min(255, this.influenceIntensity);
+        const radius = step * 2 + 2;
+
+        c.save();
+        for (let x = 0; x < this.size; x++) {
+          for (let y = 0; y < this.size; y++) {
+            const heatValue = heatmap[this.index(x, y)];
+            const alpha = Math.floor(Math.abs(alphaConst * (heatValue - 0.5) * 2));
+            if (alpha <= 0) continue;
+
+            const cx = pad + x * step;
+            const cy = pad + y * step;
+            // Оригинальные цвета Influencie:
+            // чёрное влияние = (191,0,79), белое = (0,128,255).
+            const rgb = heatValue > 0.5 ? [191, 0, 79] : [0, 128, 255];
+            const alpha01 = alpha / 255;
+
+            // Точный расчёт второй точки градиента из BoardRenderer.drawHeatmap().
+            const ratio = Math.max(1e-9, alpha / alphaConst);
+            let fadeStop = 0.5 + 0.5 * Math.max(0, Math.log(ratio) / 0.8 + 1);
+            fadeStop = Math.max(0.0001, Math.min(1, fadeStop));
+
+            const gradient = c.createRadialGradient(cx, cy, 0, cx, cy, radius);
+            gradient.addColorStop(0, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha01})`);
+            gradient.addColorStop(fadeStop, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0)`);
+            if (fadeStop < 1) gradient.addColorStop(1, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0)`);
+            c.fillStyle = gradient;
+            c.fillRect(cx - radius, cy - radius, radius * 2 + 2, radius * 2 + 2);
+          }
+        }
+        c.restore();
+      }
+
       draw() {
         if (!this.ctx) return;
         const { cssSize, pad, step } = this.metrics();
@@ -645,6 +797,10 @@
         wood.addColorStop(1, '#c99751');
         c.fillStyle = wood;
         c.fillRect(0, 0, cssSize, cssSize);
+
+        // В оригинальном Influencie heatmap рисуется поверх доски,
+        // но под линиями и камнями.
+        this.drawInfluenceHeatmap(pad, step);
 
         const showGrid = this.viewMode !== 'clean';
         const showFaces = this.viewMode === 'faces';
@@ -1613,6 +1769,9 @@
     const boardStandardBtn = document.getElementById('boardStandard');
     const boardCleanBtn = document.getElementById('boardClean');
     const boardFacesBtn = document.getElementById('boardFaces');
+    const boardInfluenceBtn = document.getElementById('boardInfluence');
+    const influenceStrengthInput = document.getElementById('influenceStrength');
+    const influenceIntensityInput = document.getElementById('influenceIntensity');
 
     function setBoardViewMode(mode) {
       board.setViewMode(mode);
@@ -1624,6 +1783,18 @@
     boardStandardBtn.addEventListener('click', () => setBoardViewMode('standard'));
     boardCleanBtn.addEventListener('click', () => setBoardViewMode('clean'));
     boardFacesBtn.addEventListener('click', () => setBoardViewMode('faces'));
+    boardInfluenceBtn.addEventListener('click', () => {
+      board.setInfluenceVisible(!board.showInfluence);
+      boardInfluenceBtn.classList.toggle('active', board.showInfluence);
+    });
+    influenceStrengthInput.addEventListener('input', () => {
+      board.setInfluenceStrength(influenceStrengthInput.value);
+      influenceStrengthInput.value = String(board.influenceStrength);
+    });
+    influenceIntensityInput.addEventListener('input', () => {
+      board.setInfluenceIntensity(influenceIntensityInput.value);
+      influenceIntensityInput.value = String(board.influenceIntensity);
+    });
     const sizeSelect = document.getElementById('size');
     const speedSelect = document.getElementById('speed');
     const gameMsg = document.getElementById('gameMsg');
