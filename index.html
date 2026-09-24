@@ -833,35 +833,46 @@
       }
 
       computeInfluenceHeatmap(clampStonePoints = true) {
-        // Базовая математическая модель Influencie с поправкой на устойчивость цепочек:
-        // 1–2 дыхания -> влияние 0; 3 дыхания -> 50% влияния; 4+ -> полное влияние.
-        const heatmap = new Float64Array(this.size * this.size);
+        // Влияние двух цветов считается независимо:
+        // 1) складываем все чёрное влияние и ограничиваем поле диапазоном [0, +1];
+        // 2) складываем все белое влияние и ограничиваем поле диапазоном [-1, 0];
+        // 3) только после этого складываем оба поля.
+        const blackField = new Float64Array(this.size * this.size);
+        const whiteField = new Float64Array(this.size * this.size);
         const degrade = 1.0 / this.influenceStrength;
         const groups = this.buildGroups();
 
         for (const group of groups) {
           const [gx, gy] = group.stones[0];
           const liberties = this.groupAt(gx, gy).liberties.size;
+
           let influenceFactor = 1;
           if (liberties <= 2) influenceFactor = 0;
           else if (liberties === 3) influenceFactor = this.influenceThreeLibFactor;
           if (influenceFactor === 0) continue;
 
-          const initial = (group.color === 1 ? 1 : -1) * influenceFactor;
+          const targetField = group.color === 1 ? blackField : whiteField;
+
           for (const [x, y] of group.stones) {
-            this.floodAddInfluence(
-              heatmap,
+            this.floodAddInfluenceSeparated(
+              targetField,
               new Uint8Array(this.size * this.size),
               x, y, x, y,
-              initial,
-              degrade
+              influenceFactor,
+              degrade,
+              group.color
             );
           }
         }
 
-        // Для отображения Influencie корректирует значение непосредственно под камнями,
-        // чтобы они не создавали чрезмерно яркое пятно. Для анализа тревожного лица
-        // эту коррекцию отключаем: нужен реальный итоговый баланс влияния под цепочкой.
+        const heatmap = new Float64Array(this.size * this.size);
+        for (let i = 0; i < heatmap.length; i++) {
+          heatmap[i] = blackField[i] + whiteField[i];
+        }
+
+        // Для отображения корректируем значение непосредственно под камнями.
+        // Для анализа тревожного лица clampStonePoints=false, чтобы использовать
+        // реальный итоговый баланс влияния под цепочкой.
         if (clampStonePoints) {
           for (let x = 0; x < this.size; x++) {
             for (let y = 0; y < this.size; y++) {
@@ -876,7 +887,7 @@
           }
         }
 
-        // Оригинал переводит [-1, +1] в [0, 1] и обрезает края.
+        // Переводим итоговое поле из [-1, +1] в [0, 1].
         const normalized = new Float64Array(heatmap.length);
         for (let i = 0; i < heatmap.length; i++) {
           normalized[i] = Math.max(0, Math.min(1, (heatmap[i] + 1) / 2));
@@ -884,31 +895,31 @@
         return normalized;
       }
 
-      floodAddInfluence(heatmap, seen, originalX, originalY, x, y, initial, degrade) {
+      floodAddInfluenceSeparated(field, seen, originalX, originalY, x, y, initial, degrade, color) {
         if (x < 0 || y < 0 || x >= this.size || y >= this.size) return;
         const index = this.index(x, y);
         if (seen[index]) return;
 
-        heatmap[index] += initial;
         seen[index] = 1;
 
-        if (initial > 0) {
+        if (color === 1) {
+          field[index] = Math.min(1, field[index] + initial);
           // Чёрное влияние не распространяется дальше через белый камень.
           if (this.getStone(x, y) === 2) return;
-          initial = Math.max(0, initial - degrade);
         } else {
+          field[index] = Math.max(-1, field[index] - initial);
           // Белое влияние не распространяется дальше через чёрный камень.
           if (this.getStone(x, y) === 1) return;
-          initial = Math.min(0, initial + degrade);
         }
 
-        if (initial === 0) return;
+        const next = Math.max(0, initial - degrade);
+        if (next === 0) return;
 
-        // Сохраняем оригинальную направленную flood-fill геометрию Influencie.
-        if (originalX - x >= 0) this.floodAddInfluence(heatmap, seen, originalX, originalY, x - 1, y, initial, degrade);
-        if (originalX - x <= 0) this.floodAddInfluence(heatmap, seen, originalX, originalY, x + 1, y, initial, degrade);
-        if (originalY - y >= 0) this.floodAddInfluence(heatmap, seen, originalX, originalY, x, y - 1, initial, degrade);
-        if (originalY - y <= 0) this.floodAddInfluence(heatmap, seen, originalX, originalY, x, y + 1, initial, degrade);
+        // Сохраняем ту же направленную flood-fill геометрию.
+        if (originalX - x >= 0) this.floodAddInfluenceSeparated(field, seen, originalX, originalY, x - 1, y, next, degrade, color);
+        if (originalX - x <= 0) this.floodAddInfluenceSeparated(field, seen, originalX, originalY, x + 1, y, next, degrade, color);
+        if (originalY - y >= 0) this.floodAddInfluenceSeparated(field, seen, originalX, originalY, x, y - 1, next, degrade, color);
+        if (originalY - y <= 0) this.floodAddInfluenceSeparated(field, seen, originalX, originalY, x, y + 1, next, degrade, color);
       }
 
       drawInfluenceHeatmap(pad, step) {
