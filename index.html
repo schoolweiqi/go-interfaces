@@ -757,7 +757,8 @@
         const groups = this.buildGroups();
 
         for (const group of groups) {
-          const liberties = group.liberties;
+          const [gx, gy] = group.stones[0];
+          const liberties = this.groupAt(gx, gy).liberties.size;
           let influenceFactor = 1;
           if (liberties <= 2) influenceFactor = 0;
           else if (liberties === 3) influenceFactor = 0.5;
