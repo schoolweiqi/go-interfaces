@@ -382,14 +382,21 @@
 
 
     const FACE_SPRITE_FRAME = 128;
-    const FACE_STATE_INDEX = { calm: 0, happy: 1, sad: 2, crying: 3, dying: 4, anxious: 5 };
+    const FACE_STATE_INDEX = { calm: 0, happy: 1, sad: 2, crying: 3, dying: 4 };
     const faceSprite = new Image();
+    const anxiousFaceSprite = new Image();
     let faceSpriteReady = false;
+    let anxiousFaceSpriteReady = false;
     faceSprite.addEventListener('load', () => {
       faceSpriteReady = true;
       if (window.goBoardInstance) window.goBoardInstance.draw();
     });
+    anxiousFaceSprite.addEventListener('load', () => {
+      anxiousFaceSpriteReady = true;
+      if (window.goBoardInstance) window.goBoardInstance.draw();
+    });
     faceSprite.src = 'go-stone-face-sprite.png';
+    anxiousFaceSprite.src = 'go-stone-face-anxious.png';
 
 
     const LINK_PARAM_DEFS = {
@@ -759,7 +766,7 @@
         return groups;
       }
 
-      computeInfluenceHeatmap() {
+      computeInfluenceHeatmap(clampStonePoints = true) {
         // Базовая математическая модель Influencie с поправкой на устойчивость цепочек:
         // 1–2 дыхания -> влияние 0; 3 дыхания -> 50% влияния; 4+ -> полное влияние.
         const heatmap = new Float64Array(this.size * this.size);
@@ -786,16 +793,19 @@
           }
         }
 
-        // Influencie делает это при включённом gradient mode,
-        // чтобы сами камни не создавали чрезмерно яркое пятно.
-        for (let x = 0; x < this.size; x++) {
-          for (let y = 0; y < this.size; y++) {
-            const i = this.index(x, y);
-            const stone = this.getStone(x, y);
-            if (stone === 1) {
-              heatmap[i] = Math.max(0, Math.min(heatmap[i], 0.5));
-            } else if (stone === 2) {
-              heatmap[i] = Math.min(0, Math.max(heatmap[i], -0.5));
+        // Для отображения Influencie корректирует значение непосредственно под камнями,
+        // чтобы они не создавали чрезмерно яркое пятно. Для анализа тревожного лица
+        // эту коррекцию отключаем: нужен реальный итоговый баланс влияния под цепочкой.
+        if (clampStonePoints) {
+          for (let x = 0; x < this.size; x++) {
+            for (let y = 0; y < this.size; y++) {
+              const i = this.index(x, y);
+              const stone = this.getStone(x, y);
+              if (stone === 1) {
+                heatmap[i] = Math.max(0, Math.min(heatmap[i], 0.5));
+              } else if (stone === 2) {
+                heatmap[i] = Math.min(0, Math.max(heatmap[i], -0.5));
+              }
             }
           }
         }
@@ -930,7 +940,7 @@
         }
 
         if (showFaces && faceSpriteReady) {
-          const faceInfluence = this.computeInfluenceHeatmap();
+          const faceInfluence = this.computeInfluenceHeatmap(false);
           this.drawGroupFaces(groups, pad, step, faceInfluence);
         }
 
@@ -1478,7 +1488,10 @@
       }
 
       groupFullyInOpponentInfluence(group, heatmap) {
-        if (!heatmap || group.liberties < 4 || !group.stones.length) return false;
+        if (!heatmap || !group.stones.length) return false;
+        const [gx, gy] = group.stones[0];
+        const actualLiberties = this.groupAt(gx, gy).liberties.size;
+        if (actualLiberties < 4) return false;
         return group.stones.every(([x, y]) => {
           const value = heatmap[this.index(x, y)];
           return group.color === 1 ? value < 0.5 : value > 0.5;
@@ -1497,14 +1510,8 @@
       }
 
       drawFaceOverlay(cx, cy, radius, stone, faceState) {
-        const frame = FACE_STATE_INDEX[faceState];
-        if (frame === undefined) return;
         const c = this.ctx;
         const frameSize = FACE_SPRITE_FRAME;
-        const sx = frame * frameSize;
-        const sy = 0;
-        const sw = frameSize;
-        const sh = faceSprite.naturalHeight || frameSize;
         const scale = 0.94;
         const size = radius * 2 * scale;
         const dx = cx - size / 2;
@@ -1514,7 +1521,21 @@
         c.imageSmoothingEnabled = true;
         c.filter = stone === 1 ? 'invert(1)' : 'none';
         c.globalAlpha = 0.97;
-        c.drawImage(faceSprite, sx, sy, sw, sh, dx, dy, size, size);
+
+        if (faceState === 'anxious') {
+          if (anxiousFaceSpriteReady) {
+            c.drawImage(anxiousFaceSprite, 0, 0, frameSize, frameSize, dx, dy, size, size);
+          }
+        } else {
+          const frame = FACE_STATE_INDEX[faceState];
+          if (frame !== undefined) {
+            const sx = frame * frameSize;
+            const sy = 0;
+            const sw = frameSize;
+            const sh = faceSprite.naturalHeight || frameSize;
+            c.drawImage(faceSprite, sx, sy, sw, sh, dx, dy, size, size);
+          }
+        }
         c.restore();
       }
 
