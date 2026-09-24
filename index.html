@@ -28,7 +28,7 @@
     main {
       display: grid;
       grid-template-columns: 300px minmax(420px, 1fr);
-      grid-template-areas: "ogs board" "network board" "bot board";
+      grid-template-areas: "ogs board" "network board" "bot board" "settings board";
       gap: 16px;
       padding: 16px;
       max-width: 1250px;
@@ -44,6 +44,39 @@
     .ogs { grid-area: ogs; }
     .network { grid-area: network; }
     .bot { grid-area: bot; }
+    .settings { grid-area: settings; }
+    .settings button { margin-bottom: 0; }
+    .settingsBody {
+      display: grid;
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .settingsBody[hidden] { display: none; }
+    .settingsGroup {
+      display: grid;
+      gap: 8px;
+      padding-top: 10px;
+      border-top: 1px solid #34383d;
+    }
+    .settingsGroup:first-child {
+      padding-top: 0;
+      border-top: 0;
+    }
+    .settingsGroup h3 {
+      margin: 0;
+      font-size: 13px;
+      color: #d7dbe0;
+      font-weight: 700;
+    }
+    .settingsBody label {
+      margin: 0;
+      font-size: 12px;
+    }
+    .settingsBody input {
+      min-height: 34px;
+      margin: 4px 0 0;
+      font-size: 12px;
+    }
     .controls { grid-area: controls; width: min(82vh, 100%); }
     .boardWrap {
       grid-area: board;
@@ -80,25 +113,6 @@
       background: #b98645;
       border-color: #c49356;
       color: #15100a;
-    }
-    .influenceSettings {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-      width: 100%;
-      padding: 10px 12px;
-      border: 1px solid #34383d;
-      border-radius: 9px;
-      background: #1b1e21;
-    }
-    .influenceSettings label {
-      margin: 0;
-      font-size: 12px;
-    }
-    .influenceSettings input {
-      min-height: 34px;
-      margin: 4px 0 0;
-      font-size: 12px;
     }
     canvas {
       width: min(82vh, 100%);
@@ -201,7 +215,7 @@
     @media (max-width: 820px) {
       main {
         grid-template-columns: 1fr;
-        grid-template-areas: "ogs" "network" "bot" "board";
+        grid-template-areas: "ogs" "network" "bot" "settings" "board";
       }
       canvas { width: 100%; }
       .boardWrap { align-items: stretch; }
@@ -295,22 +309,35 @@
         <div class="botScore" id="botScore" hidden></div>
       </section>
 
-      <section class="boardWrap">
-        <canvas id="board" aria-label="Доска Го"></canvas>
-        <div class="boardSidebar">
-          <div class="boardModes" aria-label="Режим отображения доски">
-            <button id="boardStandard" class="active" type="button">стандарт</button>
-            <button id="boardClean" type="button">чистое поле</button>
-            <button id="boardFaces" type="button">лица</button>
-            <button id="boardInfluence" type="button">влияние</button>
+      <section class="panel settings">
+        <button id="settingsToggle" class="secondary" type="button" aria-expanded="false">Настройки</button>
+        <div id="settingsBody" class="settingsBody" hidden>
+          <div class="settingsGroup">
+            <h3>Связи</h3>
+            <label>Толщина перемычек
+              <input id="linkThickness" type="number" min="0.3" max="3" step="0.1" value="1">
+            </label>
           </div>
-          <div class="influenceSettings" aria-label="Настройки влияния">
-            <label>Сила
-              <input id="influenceStrength" type="number" min="1" max="20" step="1" value="7">
+          <div class="settingsGroup">
+            <h3>Влияние</h3>
+            <label>Сила влияния
+              <input id="influenceStrength" type="number" min="1" max="20" step="1" value="4">
             </label>
             <label>Интенсивность
               <input id="influenceIntensity" type="number" min="0" max="255" step="1" value="180">
             </label>
+          </div>
+        </div>
+      </section>
+
+      <section class="boardWrap">
+        <canvas id="board" aria-label="Доска Го"></canvas>
+        <div class="boardSidebar">
+          <div class="boardModes" aria-label="Режимы отображения доски">
+            <button id="boardClean" type="button">чистое поле</button>
+            <button id="boardFaces" type="button">лица</button>
+            <button id="boardLinks" type="button">связи</button>
+            <button id="boardInfluence" type="button">влияние</button>
           </div>
         </div>
         <section class="panel controls">
@@ -411,18 +438,31 @@
         this.history = [];
         this.lastMove = null;
         this.onIntersection = null;
-        this.viewMode = 'standard';
+        this.showClean = false;
+        this.showFaces = false;
+        this.showLinks = false;
         this.showInfluence = false;
-        this.influenceStrength = 7;
+        this.influenceStrength = 4;
         this.influenceIntensity = 180;
+        this.linkThickness = 1;
         this.setSize(size);
 
         canvas.addEventListener('click', (event) => this.handleClick(event));
         window.addEventListener('resize', () => this.draw());
       }
 
-      setViewMode(mode) {
-        this.viewMode = ['standard', 'clean', 'faces'].includes(mode) ? mode : 'standard';
+      setCleanVisible(visible) {
+        this.showClean = Boolean(visible);
+        this.draw();
+      }
+
+      setFacesVisible(visible) {
+        this.showFaces = Boolean(visible);
+        this.draw();
+      }
+
+      setLinksVisible(visible) {
+        this.showLinks = Boolean(visible);
         this.draw();
       }
 
@@ -432,12 +472,17 @@
       }
 
       setInfluenceStrength(value) {
-        this.influenceStrength = Math.max(1, Math.min(20, Math.round(Number(value) || 7)));
+        this.influenceStrength = Math.max(1, Math.min(20, Math.round(Number(value) || 4)));
         this.draw();
       }
 
       setInfluenceIntensity(value) {
         this.influenceIntensity = Math.max(0, Math.min(255, Math.round(Number(value) || 0)));
+        this.draw();
+      }
+
+      setLinkThickness(value) {
+        this.linkThickness = Math.max(0.3, Math.min(3, Number(value) || 1));
         this.draw();
       }
 
@@ -828,8 +873,9 @@
         // но под линиями и камнями.
         this.drawInfluenceHeatmap(pad, step);
 
-        const showGrid = this.viewMode !== 'clean';
-        const showFaces = this.viewMode === 'faces';
+        const showGrid = !this.showClean;
+        const showFaces = this.showFaces;
+        const showLinks = this.showLinks;
 
         if (showGrid) {
           c.strokeStyle = '#2d2116';
@@ -848,12 +894,14 @@
           c.fill();
         }
 
-        if (showFaces) {
-          const groups = this.buildGroups();
+        this.drawCoordinates(pad, step, cssSize);
+
+        const groups = (showFaces || showLinks) ? this.buildGroups() : null;
+
+        if (showLinks) {
           const links = this.buildThinLinks(groups);
           this.drawThinLinks(links, pad, step, cssSize);
           this.drawMetaballGroups(groups, pad, step, cssSize);
-          if (faceSpriteReady) this.drawGroupFaces(groups, pad, step);
         } else {
           for (let y = 0; y < this.size; y++) {
             for (let x = 0; x < this.size; x++) {
@@ -864,7 +912,44 @@
           }
         }
 
+        if (showFaces && faceSpriteReady) this.drawGroupFaces(groups, pad, step);
+
         this.drawLastMoveMarker(pad, step);
+      }
+
+      drawCoordinates(pad, step, cssSize) {
+        const c = this.ctx;
+        const letters = [];
+        for (let x = 0; x < this.size; x++) {
+          const code = 65 + x + (x >= 8 ? 1 : 0); // В координатах Го буква I пропускается.
+          letters.push(String.fromCharCode(code));
+        }
+
+        const fontSize = 14;
+        const edgeGap = Math.max(8, Math.min(14, pad * 0.42));
+        c.save();
+        c.fillStyle = '#2d2116';
+        c.font = `500 ${fontSize}px Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+        c.textAlign = 'center';
+        c.textBaseline = 'middle';
+
+        const topY = Math.max(fontSize * 0.65, pad - edgeGap);
+        const bottomY = Math.min(cssSize - fontSize * 0.65, cssSize - pad + edgeGap);
+        for (let x = 0; x < this.size; x++) {
+          const px = pad + x * step;
+          c.fillText(letters[x], px, topY);
+          c.fillText(letters[x], px, bottomY);
+        }
+
+        const leftX = Math.max(fontSize * 0.7, pad - edgeGap);
+        const rightX = Math.min(cssSize - fontSize * 0.7, cssSize - pad + edgeGap);
+        for (let y = 0; y < this.size; y++) {
+          const label = String(this.size - y);
+          const py = pad + y * step;
+          c.fillText(label, leftX, py);
+          c.fillText(label, rightX, py);
+        }
+        c.restore();
       }
 
       drawLastMoveMarker(pad, step) {
@@ -1265,7 +1350,7 @@
         const params = linkRenderSettings[link.type] || LINK_PARAM_DEFS.diagonal;
         const sigmaFactor = Math.max(0.01, Number(params.sigmaFactor) || 0.1);
         const threshold = Math.max(0.01, Math.min(0.99, Number(params.threshold) || 0.3));
-        const sigma = step * sigmaFactor;
+        const sigma = step * sigmaFactor * this.linkThickness;
         const [x1, y1] = link.from;
         const [x2, y2] = link.to;
         const ax = pad + x1 * step;
@@ -1792,26 +1877,41 @@
 
     const board = new GoBoard(document.getElementById('board'), 19);
     window.goBoardInstance = board;
-    const boardStandardBtn = document.getElementById('boardStandard');
     const boardCleanBtn = document.getElementById('boardClean');
     const boardFacesBtn = document.getElementById('boardFaces');
+    const boardLinksBtn = document.getElementById('boardLinks');
     const boardInfluenceBtn = document.getElementById('boardInfluence');
     const influenceStrengthInput = document.getElementById('influenceStrength');
     const influenceIntensityInput = document.getElementById('influenceIntensity');
+    const linkThicknessInput = document.getElementById('linkThickness');
+    const settingsToggle = document.getElementById('settingsToggle');
+    const settingsBody = document.getElementById('settingsBody');
 
-    function setBoardViewMode(mode) {
-      board.setViewMode(mode);
-      boardStandardBtn.classList.toggle('active', mode === 'standard');
-      boardCleanBtn.classList.toggle('active', mode === 'clean');
-      boardFacesBtn.classList.toggle('active', mode === 'faces');
-    }
-
-    boardStandardBtn.addEventListener('click', () => setBoardViewMode('standard'));
-    boardCleanBtn.addEventListener('click', () => setBoardViewMode('clean'));
-    boardFacesBtn.addEventListener('click', () => setBoardViewMode('faces'));
+    boardCleanBtn.addEventListener('click', () => {
+      board.setCleanVisible(!board.showClean);
+      boardCleanBtn.classList.toggle('active', board.showClean);
+    });
+    boardFacesBtn.addEventListener('click', () => {
+      board.setFacesVisible(!board.showFaces);
+      boardFacesBtn.classList.toggle('active', board.showFaces);
+    });
+    boardLinksBtn.addEventListener('click', () => {
+      board.setLinksVisible(!board.showLinks);
+      boardLinksBtn.classList.toggle('active', board.showLinks);
+    });
     boardInfluenceBtn.addEventListener('click', () => {
       board.setInfluenceVisible(!board.showInfluence);
       boardInfluenceBtn.classList.toggle('active', board.showInfluence);
+    });
+    settingsToggle.addEventListener('click', () => {
+      const opening = settingsBody.hidden;
+      settingsBody.hidden = !opening;
+      settingsToggle.setAttribute('aria-expanded', String(opening));
+      settingsToggle.classList.toggle('active', opening);
+    });
+    linkThicknessInput.addEventListener('input', () => {
+      board.setLinkThickness(linkThicknessInput.value);
+      linkThicknessInput.value = String(Number(board.linkThickness.toFixed(2)));
     });
     influenceStrengthInput.addEventListener('input', () => {
       board.setInfluenceStrength(influenceStrengthInput.value);
