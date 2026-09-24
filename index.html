@@ -750,15 +750,21 @@
       }
 
       computeInfluenceHeatmap() {
-        // Точная математическая модель featurecat/Influencie (Board.getInfluenceHeatmap()).
+        // Базовая математическая модель Influencie с поправкой на устойчивость цепочек:
+        // 1–2 дыхания -> влияние 0; 3 дыхания -> 50% влияния; 4+ -> полное влияние.
         const heatmap = new Float64Array(this.size * this.size);
         const degrade = 1.0 / this.influenceStrength;
+        const groups = this.buildGroups();
 
-        for (let x = 0; x < this.size; x++) {
-          for (let y = 0; y < this.size; y++) {
-            const stone = this.getStone(x, y);
-            if (!stone) continue;
-            const initial = stone === 1 ? 1 : -1;
+        for (const group of groups) {
+          const liberties = group.liberties;
+          let influenceFactor = 1;
+          if (liberties <= 2) influenceFactor = 0;
+          else if (liberties === 3) influenceFactor = 0.5;
+          if (influenceFactor === 0) continue;
+
+          const initial = (group.color === 1 ? 1 : -1) * influenceFactor;
+          for (const [x, y] of group.stones) {
             this.floodAddInfluence(
               heatmap,
               new Uint8Array(this.size * this.size),
@@ -926,23 +932,23 @@
         }
 
         const fontSize = 14;
-        const edgeGap = Math.max(8, Math.min(14, pad * 0.42));
+        const outerInset = Math.max(fontSize * 0.62, 9);
         c.save();
         c.fillStyle = '#2d2116';
         c.font = `500 ${fontSize}px Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
         c.textAlign = 'center';
         c.textBaseline = 'middle';
 
-        const topY = Math.max(fontSize * 0.65, pad - edgeGap);
-        const bottomY = Math.min(cssSize - fontSize * 0.65, cssSize - pad + edgeGap);
+        const topY = outerInset;
+        const bottomY = cssSize - outerInset;
         for (let x = 0; x < this.size; x++) {
           const px = pad + x * step;
           c.fillText(letters[x], px, topY);
           c.fillText(letters[x], px, bottomY);
         }
 
-        const leftX = Math.max(fontSize * 0.7, pad - edgeGap);
-        const rightX = Math.min(cssSize - fontSize * 0.7, cssSize - pad + edgeGap);
+        const leftX = outerInset;
+        const rightX = cssSize - outerInset;
         for (let y = 0; y < this.size; y++) {
           const label = String(this.size - y);
           const py = pad + y * step;
