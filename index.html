@@ -323,6 +323,9 @@
             <label>Сила влияния
               <input id="influenceStrength" type="number" min="1" max="20" step="1" value="4">
             </label>
+            <label>Коэффициент влияния при 3 дыханиях
+              <input id="influenceThreeLibFactor" type="number" min="0" max="1" step="0.05" value="0.8">
+            </label>
             <label>Интенсивность
               <input id="influenceIntensity" type="number" min="0" max="255" step="1" value="180">
             </label>
@@ -379,7 +382,7 @@
 
 
     const FACE_SPRITE_FRAME = 128;
-    const FACE_STATE_INDEX = { calm: 0, happy: 1, sad: 2, crying: 3, dying: 4 };
+    const FACE_STATE_INDEX = { calm: 0, happy: 1, sad: 2, crying: 3, dying: 4, anxious: 5 };
     const faceSprite = new Image();
     let faceSpriteReady = false;
     faceSprite.addEventListener('load', () => {
@@ -443,6 +446,7 @@
         this.showLinks = false;
         this.showInfluence = false;
         this.influenceStrength = 4;
+        this.influenceThreeLibFactor = 0.8;
         this.influenceIntensity = 180;
         this.linkThickness = 1;
         this.setSize(size);
@@ -473,6 +477,12 @@
 
       setInfluenceStrength(value) {
         this.influenceStrength = Math.max(1, Math.min(20, Math.round(Number(value) || 4)));
+        this.draw();
+      }
+
+      setInfluenceThreeLibFactor(value) {
+        const numeric = Number(value);
+        this.influenceThreeLibFactor = Math.max(0, Math.min(1, Number.isFinite(numeric) ? numeric : 0.8));
         this.draw();
       }
 
@@ -761,7 +771,7 @@
           const liberties = this.groupAt(gx, gy).liberties.size;
           let influenceFactor = 1;
           if (liberties <= 2) influenceFactor = 0;
-          else if (liberties === 3) influenceFactor = 0.5;
+          else if (liberties === 3) influenceFactor = this.influenceThreeLibFactor;
           if (influenceFactor === 0) continue;
 
           const initial = (group.color === 1 ? 1 : -1) * influenceFactor;
@@ -919,7 +929,10 @@
           }
         }
 
-        if (showFaces && faceSpriteReady) this.drawGroupFaces(groups, pad, step);
+        if (showFaces && faceSpriteReady) {
+          const faceInfluence = this.computeInfluenceHeatmap();
+          this.drawGroupFaces(groups, pad, step, faceInfluence);
+        }
 
         this.drawLastMoveMarker(pad, step);
       }
@@ -1464,13 +1477,22 @@
         c.restore();
       }
 
-      drawGroupFaces(groups, pad, step) {
+      groupFullyInOpponentInfluence(group, heatmap) {
+        if (!heatmap || group.liberties < 4 || !group.stones.length) return false;
+        return group.stones.every(([x, y]) => {
+          const value = heatmap[this.index(x, y)];
+          return group.color === 1 ? value < 0.5 : value > 0.5;
+        });
+      }
+
+      drawGroupFaces(groups, pad, step, heatmap) {
         for (const group of groups) {
           const [ax, ay] = group.anchor;
           const [ox, oy] = group.faceOffset;
           const cx = pad + ax * step + ox * step;
           const cy = pad + ay * step + oy * step;
-          this.drawFaceOverlay(cx, cy, step * 0.38, group.color, group.state);
+          const faceState = this.groupFullyInOpponentInfluence(group, heatmap) ? 'anxious' : group.state;
+          this.drawFaceOverlay(cx, cy, step * 0.38, group.color, faceState);
         }
       }
 
@@ -1889,6 +1911,7 @@
     const boardLinksBtn = document.getElementById('boardLinks');
     const boardInfluenceBtn = document.getElementById('boardInfluence');
     const influenceStrengthInput = document.getElementById('influenceStrength');
+    const influenceThreeLibFactorInput = document.getElementById('influenceThreeLibFactor');
     const influenceIntensityInput = document.getElementById('influenceIntensity');
     const linkThicknessInput = document.getElementById('linkThickness');
     const settingsToggle = document.getElementById('settingsToggle');
@@ -1923,6 +1946,10 @@
     influenceStrengthInput.addEventListener('input', () => {
       board.setInfluenceStrength(influenceStrengthInput.value);
       influenceStrengthInput.value = String(board.influenceStrength);
+    });
+    influenceThreeLibFactorInput.addEventListener('input', () => {
+      board.setInfluenceThreeLibFactor(influenceThreeLibFactorInput.value);
+      influenceThreeLibFactorInput.value = String(board.influenceThreeLibFactor);
     });
     influenceIntensityInput.addEventListener('input', () => {
       board.setInfluenceIntensity(influenceIntensityInput.value);
