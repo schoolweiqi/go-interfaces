@@ -77,6 +77,22 @@
       margin: 4px 0 0;
       font-size: 12px;
     }
+    .settingsCheck {
+      display: flex !important;
+      align-items: center;
+      gap: 8px;
+      min-height: 28px;
+      cursor: pointer;
+    }
+    .settingsBody .settingsCheck input {
+      width: 16px;
+      height: 16px;
+      min-height: 0;
+      margin: 0;
+      padding: 0;
+      flex: 0 0 auto;
+      accent-color: #b98645;
+    }
     .controls { grid-area: controls; width: min(82vh, 100%); }
     .boardWrap {
       grid-area: board;
@@ -329,6 +345,10 @@
             <label>Интенсивность
               <input id="influenceIntensity" type="number" min="0" max="255" step="1" value="180">
             </label>
+            <label class="settingsCheck">
+              <input id="influenceNumbers" type="checkbox">
+              <span>Число</span>
+            </label>
           </div>
         </div>
       </section>
@@ -452,6 +472,7 @@
         this.showFaces = false;
         this.showLinks = false;
         this.showInfluence = false;
+        this.showInfluenceNumbers = false;
         this.influenceStrength = 4;
         this.influenceThreeLibFactor = 0.8;
         this.influenceIntensity = 180;
@@ -479,6 +500,11 @@
 
       setInfluenceVisible(visible) {
         this.showInfluence = Boolean(visible);
+        this.draw();
+      }
+
+      setInfluenceNumbersVisible(visible) {
+        this.showInfluenceNumbers = Boolean(visible);
         this.draw();
       }
 
@@ -882,6 +908,41 @@
         c.restore();
       }
 
+      drawInfluenceNumbers(pad, step) {
+        if (!this.showInfluenceNumbers) return;
+
+        const heatmap = this.computeInfluenceHeatmap();
+        const c = this.ctx;
+        const fontSize = Math.max(7, Math.min(11, step * 0.30));
+
+        c.save();
+        c.font = `700 ${fontSize}px Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+        c.textAlign = 'center';
+        c.textBaseline = 'middle';
+        c.lineJoin = 'round';
+        c.lineWidth = Math.max(2, fontSize * 0.28);
+        c.strokeStyle = 'rgba(0,0,0,.82)';
+        c.fillStyle = '#ffffff';
+
+        for (let y = 0; y < this.size; y++) {
+          for (let x = 0; x < this.size; x++) {
+            const normalized = heatmap[this.index(x, y)];
+            let signed = (normalized - 0.5) * 2;
+            if (Math.abs(signed) < 0.005) signed = 0;
+
+            const label = signed === 0
+              ? '0.00'
+              : `${signed > 0 ? '+' : ''}${signed.toFixed(2)}`;
+
+            const cx = pad + x * step;
+            const cy = pad + y * step;
+            c.strokeText(label, cx, cy);
+            c.fillText(label, cx, cy);
+          }
+        }
+        c.restore();
+      }
+
       draw() {
         if (!this.ctx) return;
         const { cssSize, pad, step } = this.metrics();
@@ -945,6 +1006,7 @@
         }
 
         this.drawLastMoveMarker(pad, step);
+        this.drawInfluenceNumbers(pad, step);
       }
 
       drawCoordinates(pad, step, cssSize) {
@@ -1934,6 +1996,7 @@
     const influenceStrengthInput = document.getElementById('influenceStrength');
     const influenceThreeLibFactorInput = document.getElementById('influenceThreeLibFactor');
     const influenceIntensityInput = document.getElementById('influenceIntensity');
+    const influenceNumbersInput = document.getElementById('influenceNumbers');
     const linkThicknessInput = document.getElementById('linkThickness');
     const settingsToggle = document.getElementById('settingsToggle');
     const settingsBody = document.getElementById('settingsBody');
@@ -1975,6 +2038,9 @@
     influenceIntensityInput.addEventListener('input', () => {
       board.setInfluenceIntensity(influenceIntensityInput.value);
       influenceIntensityInput.value = String(board.influenceIntensity);
+    });
+    influenceNumbersInput.addEventListener('change', () => {
+      board.setInfluenceNumbersVisible(influenceNumbersInput.checked);
     });
     const sizeSelect = document.getElementById('size');
     const speedSelect = document.getElementById('speed');
