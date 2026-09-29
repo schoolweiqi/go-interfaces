@@ -336,6 +336,11 @@
           </div>
           <div class="settingsGroup">
             <h3>Влияние</h3>
+            <!--
+              Параметры влияния временно вынесены в интерфейс для отладки модели.
+              Само влияние сначала рассчитывается на перекрёстках, затем превращается
+              в единое непрерывное цветовое поле без наложения отдельных цветных кругов.
+            -->
             <label>Сила влияния
               <input id="influenceStrength" type="number" min="1" max="20" step="1" value="4">
             </label>
@@ -347,9 +352,6 @@
             </label>
             <label>Radius multiplier
               <input id="influenceRadiusMultiplier" type="number" min="0.1" max="6" step="0.1" value="2">
-            </label>
-            <label>Radius additive
-              <input id="influenceRadiusAdditive" type="number" min="0" max="30" step="0.5" value="2">
             </label>
             <label>Gradient falloff
               <input id="influenceGradientFalloff" type="number" min="0.05" max="5" step="0.05" value="0.8">
@@ -488,8 +490,12 @@
         this.influenceStrength = 4;
         this.influenceThreeLibFactor = 0.8;
         this.influenceIntensity = 180;
+        // В новой визуализации Radius multiplier задаёт силу дополнительного
+        // сглаживания уже единого поля. Отдельных радиальных пятен больше нет.
         this.influenceRadiusMultiplier = 2;
-        this.influenceRadiusAdditive = 2;
+
+        // Gradient falloff управляет нелинейностью прозрачности:
+        // чем меньше значение, тем быстрее слабое влияние становится заметным.
         this.influenceGradientFalloff = 0.8;
         this.influenceStonePointClamp = 0.5;
         this.linkThickness = 1;
@@ -540,24 +546,24 @@
         this.draw();
       }
 
+      // В едином поле Radius multiplier управляет только визуальным blur.
+      // Числовая матрица влияния от этого параметра не меняется.
       setInfluenceRadiusMultiplier(value) {
         const numeric = Number(value);
         this.influenceRadiusMultiplier = Math.max(0.1, Math.min(6, Number.isFinite(numeric) ? numeric : 2));
         this.draw();
       }
 
-      setInfluenceRadiusAdditive(value) {
-        const numeric = Number(value);
-        this.influenceRadiusAdditive = Math.max(0, Math.min(30, Number.isFinite(numeric) ? numeric : 2));
-        this.draw();
-      }
-
+      // Нелинейность прозрачности единого поля:
+      // < 1 делает слабое влияние заметнее, > 1 — слабее.
       setInfluenceGradientFalloff(value) {
         const numeric = Number(value);
         this.influenceGradientFalloff = Math.max(0.05, Math.min(5, Number.isFinite(numeric) ? numeric : 0.8));
         this.draw();
       }
 
+      // Ограничение отображаемого итогового значения непосредственно под камнем.
+      // На расчёт тревожного лица эта коррекция не влияет: там clamp отключён.
       setInfluenceStonePointClamp(value) {
         const numeric = Number(value);
         this.influenceStonePointClamp = Math.max(0, Math.min(1, Number.isFinite(numeric) ? numeric : 0.5));
@@ -833,10 +839,31 @@
       }
 
       computeInfluenceHeatmap(clampStonePoints = true) {
-        // Влияние двух цветов считается независимо:
-        // 1) складываем все чёрное влияние и ограничиваем поле диапазоном [0, +1];
-        // 2) складываем все белое влияние и ограничиваем поле диапазоном [-1, 0];
-        // 3) только после этого складываем оба поля.
+        /*
+         * МАТЕМАТИЧЕСКИЙ РАСЧЁТ ВЛИЯНИЯ
+         * --------------------------------
+         * Эта функция рассчитывает влияние только в узлах сетки (на перекрёстках).
+         * Визуальное сглаживание и цвет здесь НЕ выполняются.
+         *
+         * Алгоритм специально симметричен для чёрных и белых:
+         *
+         * 1. Чёрное поле считается отдельно.
+         *    Все вклады чёрных камней суммируются и насыщаются максимумом +1.
+         *
+         * 2. Белое поле считается отдельно.
+         *    Все вклады белых камней суммируются и насыщаются минимумом -1.
+         *
+         * 3. После насыщения двух независимых полей они складываются:
+         *       result = blackField + whiteField
+         *
+         * Благодаря этому равные по модулю влияния двух цветов взаимно уничтожаются.
+         * Например: +0.75 + (-0.75) = 0 — нейтральный перекрёсток.
+         *
+         * Параметр clampStonePoints:
+         *   true  — применяем визуальную коррекцию значения непосредственно под камнем;
+         *   false — используем "честный" итоговый баланс. Это нужно, например,
+         *           для определения тревожного лица под чужим влиянием.
+         */
         const blackField = new Float64Array(this.size * this.size);
         const whiteField = new Float64Array(this.size * this.size);
         const degrade = 1.0 / this.influenceStrength;
@@ -922,40 +949,174 @@
         if (originalY - y <= 0) this.floodAddInfluenceSeparated(field, seen, originalX, originalY, x, y + 1, next, degrade, color);
       }
 
+      sampleInfluenceBilinear(signedMap, gx, gy) {
+        /*
+         * БИЛИНЕЙНАЯ ИНТЕРПОЛЯЦИЯ
+         * -----------------------
+         * Математическая карта влияния существует только в перекрёстках доски.
+         * Чтобы получить непрерывное поле между ними, для каждого пикселя берём
+         * четыре ближайших перекрёстка и плавно интерполируем их значения.
+         *
+         * Это принципиально отличается от старой версии, где каждый перекрёсток
+         * рисовал собственный полупрозрачный круг поверх уже нарисованных кругов.
+         * Теперь у каждого пикселя есть ОДНО итоговое числовое значение, поэтому
+         * порядок обхода доски больше не может дать преимущество одному цвету.
+         */
+        const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
+        const x = clamp(gx, 0, this.size - 1);
+        const y = clamp(gy, 0, this.size - 1);
+
+        const x0 = Math.floor(x);
+        const y0 = Math.floor(y);
+        const x1 = Math.min(this.size - 1, x0 + 1);
+        const y1 = Math.min(this.size - 1, y0 + 1);
+
+        const tx = x - x0;
+        const ty = y - y0;
+
+        const v00 = signedMap[this.index(x0, y0)];
+        const v10 = signedMap[this.index(x1, y0)];
+        const v01 = signedMap[this.index(x0, y1)];
+        const v11 = signedMap[this.index(x1, y1)];
+
+        const top = v00 * (1 - tx) + v10 * tx;
+        const bottom = v01 * (1 - tx) + v11 * tx;
+
+        return top * (1 - ty) + bottom * ty;
+      }
+
       drawInfluenceHeatmap(pad, step) {
+        /*
+         * ОТРИСОВКА ВЛИЯНИЯ ЕДИНЫМ ПОЛЕМ
+         * --------------------------------
+         * 1. Получаем итоговые значения влияния на перекрёстках.
+         * 2. Переводим их обратно из нормализованной шкалы [0..1]
+         *    в удобную знаковую шкалу [-1..+1]:
+         *       +1 = максимально чёрное влияние
+         *        0 = нейтраль
+         *       -1 = максимально белое влияние
+         * 3. Для каждого пикселя доски билинейно интерполируем ОДНО значение.
+         * 4. По знаку этого значения выбираем ОДИН цвет:
+         *       value > 0 -> малиновый
+         *       value < 0 -> голубой
+         *       value = 0 -> полностью прозрачно
+         * 5. Прозрачность определяется модулем влияния.
+         *
+         * Важный результат: малиновый и голубой больше не накладываются друг на друга
+         * как независимые Canvas-слои. Поэтому не возникает "фиолетового" артефакта
+         * и один цвет не может визуально передавить другой из-за порядка рисования.
+         */
         if (!this.showInfluence || this.influenceIntensity <= 0) return;
-        const heatmap = this.computeInfluenceHeatmap();
+
+        const normalized = this.computeInfluenceHeatmap();
+        const signedMap = new Float64Array(normalized.length);
+
+        for (let i = 0; i < normalized.length; i++) {
+          signedMap[i] = (normalized[i] - 0.5) * 2;
+        }
+
         const c = this.ctx;
-        const alphaConst = Math.min(255, this.influenceIntensity);
-        const radius = step * this.influenceRadiusMultiplier + this.influenceRadiusAdditive;
 
-        c.save();
-        for (let x = 0; x < this.size; x++) {
-          for (let y = 0; y < this.size; y++) {
-            const heatValue = heatmap[this.index(x, y)];
-            const alpha = Math.floor(Math.abs(alphaConst * (heatValue - 0.5) * 2));
-            if (alpha <= 0) continue;
+        // influenceIntensity хранится в привычной шкале 0..255.
+        // Для пиксельной альфы переводим её в диапазон 0..1.
+        const alphaConst = Math.min(255, this.influenceIntensity) / 255;
 
-            const cx = pad + x * step;
-            const cy = pad + y * step;
-            // Оригинальные цвета Influencie:
-            // чёрное влияние = (191,0,79), белое = (0,128,255).
-            const rgb = heatValue > 0.5 ? [191, 0, 79] : [0, 128, 255];
-            const alpha01 = alpha / 255;
+        /*
+         * Поле строим во вспомогательном canvas только на области самой сетки:
+         * от первого до последнего перекрёстка.
+         *
+         * Затем готовое изображение одной операцией переносится на основную доску.
+         */
+        const fieldSize = Math.max(1, Math.round(step * (this.size - 1)));
+        const offscreen = document.createElement('canvas');
+        offscreen.width = fieldSize + 1;
+        offscreen.height = fieldSize + 1;
 
-            // Точный расчёт второй точки градиента из BoardRenderer.drawHeatmap().
-            const ratio = Math.max(1e-9, alpha / alphaConst);
-            let fadeStop = 0.5 + 0.5 * Math.max(0, Math.log(ratio) / this.influenceGradientFalloff + 1);
-            fadeStop = Math.max(0.0001, Math.min(1, fadeStop));
+        const offCtx = offscreen.getContext('2d');
+        const image = offCtx.createImageData(offscreen.width, offscreen.height);
+        const data = image.data;
 
-            const gradient = c.createRadialGradient(cx, cy, 0, cx, cy, radius);
-            gradient.addColorStop(0, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha01})`);
-            gradient.addColorStop(fadeStop, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0)`);
-            if (fadeStop < 1) gradient.addColorStop(1, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0)`);
-            c.fillStyle = gradient;
-            c.fillRect(cx - radius, cy - radius, radius * 2 + 2, radius * 2 + 2);
+        // Фиксированные цвета нашей визуализации.
+        const blackInfluenceRgb = [191, 0, 79];   // малиновый
+        const whiteInfluenceRgb = [0, 128, 255];  // голубой
+
+        /*
+         * Проходим по каждому пикселю единого поля.
+         * px/py — координаты в пикселях;
+         * gx/gy — те же координаты в единицах расстояния между линиями доски.
+         */
+        for (let py = 0; py < offscreen.height; py++) {
+          for (let px = 0; px < offscreen.width; px++) {
+            const gx = px / step;
+            const gy = py / step;
+
+            const value = this.sampleInfluenceBilinear(signedMap, gx, gy);
+            const magnitude = Math.min(1, Math.abs(value));
+
+            /*
+             * Gradient falloff теперь отвечает не за размер отдельного круга,
+             * а за нелинейность прозрачности всего поля.
+             *
+             * При falloff = 1 прозрачность линейна:
+             *    |0.5| -> 50% от заданной интенсивности.
+             *
+             * При falloff < 1 слабое влияние становится визуально заметнее.
+             * При falloff > 1 слабое влияние становится более прозрачным.
+             */
+            let alpha01 = Math.pow(magnitude, this.influenceGradientFalloff) * alphaConst;
+            alpha01 = Math.max(0, Math.min(1, alpha01));
+
+            const idx = (py * offscreen.width + px) * 4;
+
+            // Около нуля оставляем фон полностью прозрачным.
+            if (alpha01 <= 0.002 || magnitude <= 1e-9) {
+              data[idx] = 0;
+              data[idx + 1] = 0;
+              data[idx + 2] = 0;
+              data[idx + 3] = 0;
+              continue;
+            }
+
+            const rgb = value > 0 ? blackInfluenceRgb : whiteInfluenceRgb;
+
+            data[idx] = rgb[0];
+            data[idx + 1] = rgb[1];
+            data[idx + 2] = rgb[2];
+            data[idx + 3] = Math.round(alpha01 * 255);
           }
         }
+
+        offCtx.putImageData(image, 0, 0);
+
+        c.save();
+
+        /*
+         * Жёстко ограничиваем цвет областью игровой сетки.
+         * Координаты на деревянной рамке и внешний край остаются незакрашенными.
+         */
+        c.beginPath();
+        c.rect(pad, pad, step * (this.size - 1), step * (this.size - 1));
+        c.clip();
+
+        /*
+         * Radius multiplier сохранён как экспериментальный параметр.
+         * Теперь он НЕ определяет радиус отдельных пятен.
+         *
+         * Его новый смысл — дополнительное симметричное размытие уже построенного
+         * единого поля. При 1 размытие отсутствует. При больших значениях границы
+         * влияния становятся визуально мягче.
+         *
+         * Коэффициент 0.18 переводит multiplier в умеренный blur относительно
+         * расстояния между линиями доски. Он влияет только на визуализацию,
+         * но не меняет числовые значения влияния и режим "Число".
+         */
+        const blurPx = Math.max(0, (this.influenceRadiusMultiplier - 1) * step * 0.18);
+        if (blurPx > 0.01) {
+          c.filter = `blur(${blurPx}px)`;
+        }
+
+        c.drawImage(offscreen, pad, pad);
         c.restore();
       }
 
@@ -2048,7 +2209,6 @@
     const influenceThreeLibFactorInput = document.getElementById('influenceThreeLibFactor');
     const influenceIntensityInput = document.getElementById('influenceIntensity');
     const influenceRadiusMultiplierInput = document.getElementById('influenceRadiusMultiplier');
-    const influenceRadiusAdditiveInput = document.getElementById('influenceRadiusAdditive');
     const influenceGradientFalloffInput = document.getElementById('influenceGradientFalloff');
     const influenceStonePointClampInput = document.getElementById('influenceStonePointClamp');
     const influenceNumbersInput = document.getElementById('influenceNumbers');
@@ -2097,10 +2257,6 @@
     influenceRadiusMultiplierInput.addEventListener('input', () => {
       board.setInfluenceRadiusMultiplier(influenceRadiusMultiplierInput.value);
       influenceRadiusMultiplierInput.value = String(board.influenceRadiusMultiplier);
-    });
-    influenceRadiusAdditiveInput.addEventListener('input', () => {
-      board.setInfluenceRadiusAdditive(influenceRadiusAdditiveInput.value);
-      influenceRadiusAdditiveInput.value = String(board.influenceRadiusAdditive);
     });
     influenceGradientFalloffInput.addEventListener('input', () => {
       board.setInfluenceGradientFalloff(influenceGradientFalloffInput.value);
