@@ -173,12 +173,15 @@
     const authMsg = document.getElementById('authMsg');
     const loginButton = document.getElementById('login');
     const logoutButton = document.getElementById('logout');
+    // Верхняя статусная полоса удалена из интерфейса.
+    // Оставляем переменную nullable, чтобы OGS-код мог работать без отдельного
+    // визуального индикатора подключения в шапке.
     const headerStatus = document.getElementById('status');
 
     function setLoggedOut(message = 'Не подключено к OGS') {
       loginButton.hidden = false;
       logoutButton.hidden = true;
-      headerStatus.textContent = 'Локальный режим · OGS не подключён';
+      if (headerStatus) headerStatus.textContent = 'Локальный режим · OGS не подключён';
       authMsg.textContent = message;
       const findButton = document.getElementById('findOpponent');
       if (findButton) findButton.disabled = true;
@@ -188,7 +191,7 @@
       loginButton.hidden = true;
       logoutButton.hidden = false;
       const name = user && (user.username || user.name) ? (user.username || user.name) : 'пользователь';
-      headerStatus.textContent = `OGS · ${name}`;
+      if (headerStatus) headerStatus.textContent = `OGS · ${name}`;
       authMsg.textContent = `Подключено к OGS как ${name}.`;
       const token = sessionStorage.getItem('ogs_access_token');
       if (token) connectOgsSocket(token).catch(error => {
