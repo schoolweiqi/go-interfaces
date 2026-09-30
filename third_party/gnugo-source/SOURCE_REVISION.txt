@@ -1,0 +1,9 @@
+GNU Go / wasm-gnugo source reference
+
+UPSTREAM_REPOSITORY=https://github.com/TristanCacqueray/wasm-gnugo.git
+UPSTREAM_COMMIT=382df5a9b14b62ea451012ec7d2e81c61162e037
+
+The School of Go interface is a separate project component.
+GNU Go is used as an independent game engine through gnugo-worker.js.
+
+For a future custom build, keep all project-specific GNU Go changes and build instructions in this directory.
