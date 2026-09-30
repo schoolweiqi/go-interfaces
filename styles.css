@@ -156,9 +156,9 @@ label { display: block; color: #aeb4ba; font-size: 13px; }
 }
 
 /*
- * Доска — единственный элемент правой области.
- * Её сторона ограничивается меньшим из двух доступных размеров:
- * шириной колонки и высотой окна.
+ * Правая колонка состоит из квадратной доски и компактного дерева игры.
+ * boardColumn задаёт ОБЩУЮ ширину, поэтому дерево всегда ровно по ширине доски.
+ * Высота дерева фиксирована и при большом числе вариаций прокручивается внутри.
  */
 .boardWrap {
   min-width: 0;
@@ -168,14 +168,97 @@ label { display: block; color: #aeb4ba; font-size: 13px; }
   justify-content: center;
   overflow: hidden;
 }
+.boardColumn {
+  width: min(100%, calc(100vh - 218px));
+  max-width: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 canvas {
-  width: min(100%, calc(100vh - 82px));
-  max-height: calc(100vh - 82px);
+  width: 100%;
   aspect-ratio: 1;
   display: block;
   border-radius: 4px;
   box-shadow: 0 14px 40px #0008;
   touch-action: manipulation;
+}
+
+/* Дерево игры находится непосредственно под доской. */
+.gameTreeSection {
+  width: 100%;
+  min-width: 0;
+  background: #202327;
+  border: 1px solid #34383d;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.gameTreeHeader {
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 7px 4px 10px;
+  border-bottom: 1px solid #34383d;
+  color: #cfd3d7;
+  font-size: 12px;
+}
+.treeDeleteButton {
+  width: auto;
+  min-height: 25px;
+  height: 25px;
+  padding: 0 9px;
+  margin: 0;
+  font-size: 10px;
+  white-space: nowrap;
+}
+.gameTreeScroller {
+  width: 100%;
+  height: 96px;
+  overflow-x: auto;
+  overflow-y: auto;
+  background: #17191b;
+  scrollbar-width: auto;
+  scrollbar-color: #555b62 #202327;
+}
+.gameTreeSvg {
+  display: block;
+  min-height: 74px;
+  user-select: none;
+}
+.treeEdge {
+  stroke: #555b62;
+  stroke-width: 1.5;
+  fill: none;
+}
+.treeNode {
+  cursor: pointer;
+}
+.treeNode circle {
+  stroke: #7b8188;
+  stroke-width: 1.2;
+}
+.treeNode.black circle { fill: #080808; }
+.treeNode.white circle { fill: #eeeeee; stroke: #8d8d8d; }
+.treeNode.root circle { fill: #b98645; stroke: #e1b777; }
+.treeNode.current circle {
+  stroke: #32e875;
+  stroke-width: 3;
+}
+.treeNode text {
+  pointer-events: none;
+  font: 700 8px Inter, system-ui, sans-serif;
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+.treeNode.black text, .treeNode.root text { fill: #fff; }
+.treeNode.white text { fill: #111; }
+.treeBranchMark {
+  fill: #d9aa63;
+  font: 700 9px Inter, system-ui, sans-serif;
+  dominant-baseline: central;
 }
 
 /* Настройки. */
@@ -279,8 +362,7 @@ canvas {
   }
   .leftPanel { overflow: visible; padding-right: 0; }
   .boardWrap { min-height: auto; }
-  canvas {
-    width: 100%;
-    max-height: none;
-  }
+  .boardColumn { width: 100%; }
+  canvas { width: 100%; }
+  .gameTreeScroller { height: 110px; }
 }
