@@ -6,6 +6,7 @@
     const boardFacesBtn = document.getElementById('boardFaces');
     const boardLinksBtn = document.getElementById('boardLinks');
     const boardInfluenceBtn = document.getElementById('boardInfluence');
+    const boardPhantomBtn = document.getElementById('boardPhantom');
     const influenceStrengthInput = document.getElementById('influenceStrength');
     const influenceThreeLibFactorInput = document.getElementById('influenceThreeLibFactor');
     const influenceIntensityInput = document.getElementById('influenceIntensity');
@@ -32,6 +33,10 @@
     boardInfluenceBtn.addEventListener('click', () => {
       board.setInfluenceVisible(!board.showInfluence);
       boardInfluenceBtn.classList.toggle('active', board.showInfluence);
+    });
+    boardPhantomBtn.addEventListener('click', () => {
+      board.setPhantomVisible(!board.showPhantom);
+      boardPhantomBtn.classList.toggle('active', board.showPhantom);
     });
     settingsToggle.addEventListener('click', () => {
       const opening = settingsBody.hidden;
@@ -158,6 +163,11 @@
     function updateTurn() {
       turnText.textContent = turn === 1 ? 'Ход чёрных' : 'Ход белых';
       turnStone.classList.toggle('white', turn === 2);
+
+      // Фантом всегда показывает предполагаемый ход той стороны,
+      // которой принадлежит текущая очередь хода.
+      board.setPhantomColor(turn);
+
       updateMoveNumber();
     }
 
@@ -240,6 +250,8 @@
     }
 
     board.onIntersection = async (x, y) => {
+      board.phantomHover = null;
+
       if (gameMode === 'network') {
         const state = networkGame.lastState;
         if (!networkGame.active || !state || state.status !== 'playing') return;
