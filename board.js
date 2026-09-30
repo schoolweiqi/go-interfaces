@@ -5,6 +5,53 @@ GoBoard.prototype.setCleanVisible = function(visible) {
         this.draw();
       };
 
+GoBoard.prototype.setPhantomVisible = function(visible) {
+        this.showPhantom = Boolean(visible);
+        if (!this.showPhantom) this.phantomHover = null;
+        this.draw();
+      };
+
+GoBoard.prototype.setPhantomColor = function(color) {
+        this.phantomColor = Number(color) === 2 ? 2 : 1;
+        if (this.showPhantom && this.phantomHover) this.draw();
+      };
+
+GoBoard.prototype.clearPhantomHover = function() {
+        if (!this.phantomHover) return;
+        this.phantomHover = null;
+        if (this.showPhantom) this.draw();
+      };
+
+GoBoard.prototype.handlePhantomPointerMove = function(event) {
+        if (!this.showPhantom) return;
+
+        const { pad, step } = this.metrics();
+        const rect = this.canvas.getBoundingClientRect();
+        const localX = event.clientX - rect.left;
+        const localY = event.clientY - rect.top;
+        const x = Math.round((localX - pad) / step);
+        const y = Math.round((localY - pad) / step);
+
+        let next = null;
+
+        if (x >= 0 && y >= 0 && x < this.size && y < this.size) {
+          // Предпросмотр появляется только если курсор действительно находится
+          // возле перекрёстка, а не просто внутри его большой квадратной ячейки.
+          const px = pad + x * step;
+          const py = pad + y * step;
+          const distance = Math.hypot(localX - px, localY - py);
+          if (distance <= step * 0.45) next = { x, y };
+        }
+
+        const same = this.phantomHover && next &&
+          this.phantomHover.x === next.x && this.phantomHover.y === next.y;
+
+        if (same || (!this.phantomHover && !next)) return;
+
+        this.phantomHover = next;
+        this.draw();
+      };
+
 GoBoard.prototype.metrics = function() {
         const rect = this.canvas.getBoundingClientRect();
         const cssSize = Math.max(300, Math.min(rect.width || 700, rect.width || 700));
@@ -23,6 +70,34 @@ GoBoard.prototype.metrics = function() {
 
 GoBoard.prototype.draw = function() {
         if (!this.ctx) return;
+
+        /*
+         * В режиме "фантом" временно подменяем this.stones результатом
+         * предполагаемого хода. Поэтому все существующие алгоритмы — влияние,
+         * лица, связи и группы — автоматически рассчитываются уже для позиции
+         * ПОСЛЕ этого хода.
+         *
+         * После синхронной отрисовки состояние доски обязательно возвращается.
+         */
+        let phantomPreview = null;
+        let realStones = null;
+        let realPositionHistory = null;
+
+        if (this.showPhantom && this.phantomHover) {
+          phantomPreview = this.simulateStone(
+            this.phantomHover.x,
+            this.phantomHover.y,
+            this.phantomColor
+          );
+
+          if (phantomPreview.ok) {
+            realStones = this.stones;
+            realPositionHistory = this.positionHistory;
+            this.stones = phantomPreview.stones;
+            this.positionHistory = [...realPositionHistory, phantomPreview.afterKey];
+          }
+        }
+
         const { cssSize, pad, step } = this.metrics();
         const c = this.ctx;
 
@@ -73,7 +148,22 @@ GoBoard.prototype.draw = function() {
             for (let x = 0; x < this.size; x++) {
               const stone = this.getStone(x, y);
               if (!stone) continue;
-              this.drawStone(pad + x * step, pad + y * step, step * 0.46, stone);
+
+              const isPhantomStone = Boolean(
+                phantomPreview &&
+                phantomPreview.ok &&
+                x === phantomPreview.x &&
+                y === phantomPreview.y
+              );
+
+              if (isPhantomStone) {
+                c.save();
+                c.globalAlpha = 0.52;
+                this.drawStone(pad + x * step, pad + y * step, step * 0.46, stone);
+                c.restore();
+              } else {
+                this.drawStone(pad + x * step, pad + y * step, step * 0.46, stone);
+              }
             }
           }
         }
@@ -85,6 +175,45 @@ GoBoard.prototype.draw = function() {
 
         this.drawLastMoveMarker(pad, step);
         this.drawInfluenceNumbers(pad, step);
+
+        /*
+         * В режимах "связи" и "лица" предполагаемый камень может сливаться
+         * с общей формой группы. Поэтому поверх результата рисуем тонкое
+         * пунктирное кольцо, обозначающее точку предполагаемой постановки.
+         *
+         * Если ход недопустим, вместо позиции показываем красный крест.
+         */
+        if (this.showPhantom && this.phantomHover) {
+          const hx = pad + this.phantomHover.x * step;
+          const hy = pad + this.phantomHover.y * step;
+
+          c.save();
+          if (phantomPreview && phantomPreview.ok) {
+            c.beginPath();
+            c.arc(hx, hy, step * 0.43, 0, Math.PI * 2);
+            c.setLineDash([Math.max(3, step * 0.12), Math.max(2, step * 0.08)]);
+            c.lineWidth = Math.max(1.5, step * 0.045);
+            c.strokeStyle = 'rgba(50,232,117,.95)';
+            c.stroke();
+          } else {
+            const r = step * 0.22;
+            c.lineWidth = Math.max(2, step * 0.055);
+            c.strokeStyle = 'rgba(220,70,70,.9)';
+            c.beginPath();
+            c.moveTo(hx - r, hy - r);
+            c.lineTo(hx + r, hy + r);
+            c.moveTo(hx + r, hy - r);
+            c.lineTo(hx - r, hy + r);
+            c.stroke();
+          }
+          c.restore();
+        }
+
+        // Возвращаем настоящее игровое состояние после фантомной отрисовки.
+        if (realStones) {
+          this.stones = realStones;
+          this.positionHistory = realPositionHistory;
+        }
       };
 
 GoBoard.prototype.drawCoordinates = function(pad, step, cssSize) {
