@@ -245,6 +245,6 @@
     updateCaptures();
     requestAnimationFrame(() => board.draw());
     // OGS временно скрыт и не подключается автоматически.
-    headerStatus.textContent = 'ОГС не подключен';
+    // Верхней статусной полосы больше нет; состояние остаётся внутри OGS-блока.
     const initialRoomId = new URL(location.href).searchParams.get('room');
     if (initialRoomId) joinNetworkRoom(initialRoomId);
