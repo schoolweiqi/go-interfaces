@@ -67,8 +67,9 @@ GoBoard.prototype.computeInfluenceHeatmap = function(clampStonePoints = true) {
          *
          * Параметр clampStonePoints:
          *   true  — применяем визуальную коррекцию значения непосредственно под камнем;
-         *   false — используем "честный" итоговый баланс. Это нужно, например,
-         *           для определения тревожного лица под чужим влиянием.
+         *   false — используем "честный" итоговый баланс без визуальной коррекции
+         *           под камнями. Такой вариант пригоден для логических проверок,
+         *           не связанных с отрисовкой.
          */
         const blackField = new Float64Array(this.size * this.size);
         const whiteField = new Float64Array(this.size * this.size);
@@ -104,8 +105,8 @@ GoBoard.prototype.computeInfluenceHeatmap = function(clampStonePoints = true) {
         }
 
         // Для отображения корректируем значение непосредственно под камнями.
-        // Для анализа тревожного лица clampStonePoints=false, чтобы использовать
-        // реальный итоговый баланс влияния под цепочкой.
+        // При clampStonePoints=false сохраняем реальный итоговый баланс
+        // без специальной визуальной коррекции под камнями.
         if (clampStonePoints) {
           for (let x = 0; x < this.size; x++) {
             for (let y = 0; y < this.size; y++) {
@@ -361,13 +362,4 @@ GoBoard.prototype.drawInfluenceNumbers = function(pad, step) {
         c.restore();
       };
 
-GoBoard.prototype.groupFullyInOpponentInfluence = function(group, heatmap) {
-        if (!heatmap || !group.stones.length) return false;
-        const [gx, gy] = group.stones[0];
-        const actualLiberties = this.groupAt(gx, gy).liberties.size;
-        if (actualLiberties < 4) return false;
-        return group.stones.every(([x, y]) => {
-          const value = heatmap[this.index(x, y)];
-          return group.color === 1 ? value < 0.5 : value > 0.5;
-        });
-      };
+
