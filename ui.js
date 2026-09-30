@@ -77,6 +77,10 @@
     const whiteCaptures = document.getElementById('whiteCaptures');
     const turnText = document.getElementById('turnText');
     const turnStone = document.getElementById('turnStone');
+    const moveNumber = document.getElementById('moveNumber');
+    const loadSgfButton = document.getElementById('loadSgf');
+    const downloadSgfButton = document.getElementById('downloadSgf');
+    const sgfFileInput = document.getElementById('sgfFileInput');
 
     let turn = 1; // 1 = black, 2 = white
     const botEngine = new GnuGoBotEngine();
@@ -124,14 +128,33 @@
       lastState: null
     };
 
+    function currentMoveNumber() {
+      // В локальной партии и партии с GNU Go вся последовательность, включая пас,
+      // хранится непосредственно в board.history.
+      if (gameMode !== 'network') return board.history.length;
+
+      // Сетевой сервер может прислать готовый счётчик. Если в старом состоянии
+      // его нет, показываем доступную длину массива ходов либо 0.
+      const state = networkGame.lastState || {};
+      if (Number.isFinite(Number(state.moveNumber))) return Number(state.moveNumber);
+      if (Array.isArray(state.moves)) return state.moves.length;
+      return 0;
+    }
+
+    function updateMoveNumber() {
+      moveNumber.textContent = String(currentMoveNumber());
+    }
+
     function updateTurn() {
       turnText.textContent = turn === 1 ? 'Ход чёрных' : 'Ход белых';
       turnStone.classList.toggle('white', turn === 2);
+      updateMoveNumber();
     }
 
     function updateCaptures() {
       blackCaptures.textContent = board.captures[1] || 0;
       whiteCaptures.textContent = board.captures[2] || 0;
+      updateMoveNumber();
     }
 
     function switchTurn() {
@@ -227,7 +250,9 @@
         await requestGnuGoMove();
         return;
       }
-      gameMsg.textContent = turn === 1 ? 'Чёрные пасуют.' : 'Белые пасуют.';
+      const passingColor = turn;
+      board.playPass(passingColor);
+      gameMsg.textContent = passingColor === 1 ? 'Чёрные пасуют.' : 'Белые пасуют.';
       switchTurn();
     });
 
@@ -248,7 +273,83 @@
       turn = undone.stone;
       updateTurn();
       updateCaptures();
-      gameMsg.textContent = 'Последний ход отменён вместе со снятыми камнями.';
+      gameMsg.textContent = undone.pass
+        ? 'Последний пас отменён.'
+        : 'Последний ход отменён вместе со снятыми камнями.';
+    });
+
+    /*
+     * Загрузка SGF переводит приложение в локальный режим и воспроизводит
+     * главную последовательность ходов на нашей игровой модели.
+     */
+    loadSgfButton.addEventListener('click', () => {
+      sgfFileInput.value = '';
+      sgfFileInput.click();
+    });
+
+    sgfFileInput.addEventListener('change', async () => {
+      const file = sgfFileInput.files && sgfFileInput.files[0];
+      if (!file) return;
+
+      try {
+        if (botGame.active) stopBotGame();
+        if (networkGame.active && typeof leaveNetworkGame === 'function') leaveNetworkGame();
+        gameMode = 'local';
+
+        const text = await file.text();
+        const parsed = parseSgfGame(text);
+
+        board.setSize(parsed.size);
+        board.sgfKomi = parsed.komi;
+        board.sgfSetup = {
+          black: parsed.setupBlack.map(p => [p.x, p.y]),
+          white: parsed.setupWhite.map(p => [p.x, p.y])
+        };
+
+        // Сначала устанавливаем handicap/setup-камни из AB/AW.
+        for (const p of parsed.setupBlack) board.setStone(p.x, p.y, 1);
+        for (const p of parsed.setupWhite) board.setStone(p.x, p.y, 2);
+
+        // Setup — это исходная позиция, а не игровые ходы.
+        board.history = [];
+        board.lastMove = null;
+        board.captures = { 1: 0, 2: 0 };
+        board.positionHistory = [board.positionKey()];
+
+        turn = parsed.initialTurn;
+
+        // Воспроизводим основную ветку SGF и одновременно получаем корректные
+        // захваты, ko-history, номер хода и возможность отмены.
+        for (const move of parsed.moves) {
+          if (move.pass) {
+            board.playPass(move.color);
+          } else {
+            const result = board.playStone(move.x, move.y, move.color);
+            if (!result.ok) {
+              throw new Error(`Недопустимый ход №${board.history.length + 1} в SGF: ${result.reason}`);
+            }
+          }
+          turn = move.color === 1 ? 2 : 1;
+        }
+
+        board.draw();
+        updateTurn();
+        updateCaptures();
+        gameMsg.textContent = `SGF загружен: ${file.name}. Ходов: ${board.history.length}.`;
+      } catch (error) {
+        gameMsg.textContent = `Не удалось загрузить SGF: ${error.message}`;
+      }
+    });
+
+    downloadSgfButton.addEventListener('click', () => {
+      try {
+        const sgf = buildSgfFromBoard(board);
+        const name = `go-game-${new Date().toISOString().slice(0, 10)}.sgf`;
+        downloadSgfFile(name, sgf);
+        gameMsg.textContent = `SGF сохранён. Ходов: ${board.history.length}.`;
+      } catch (error) {
+        gameMsg.textContent = `Не удалось создать SGF: ${error.message}`;
+      }
     });
 
     startBotButton.addEventListener('click', () => startBotGame().catch(error => {
