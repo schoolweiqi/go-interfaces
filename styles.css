@@ -230,3 +230,5 @@
       .boardWrap { align-items: stretch; }
       .boardSidebar, .controls { width: 100%; }
     }
+
+.ogsDisconnected { font-size: 14px; color: #c9ced3; }
