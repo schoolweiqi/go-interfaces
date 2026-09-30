@@ -547,13 +547,72 @@ GoBoard.prototype.drawThinLink = function(link, pad, step, cssSize) {
         c.restore();
       };
 
+GoBoard.prototype.groupHasNoFriendlyInfluenceAround = function(group, heatmap) {
+        /*
+         * ТРЕВОЖНОЕ ЛИЦО
+         * ---------------
+         * Тревожное выражение показывает не тактический недостаток дыханий,
+         * а стратегическую слабость окружения группы.
+         *
+         * Проверяем реальные соседние пустые перекрёстки группы — её дыхания.
+         * Если НИ НА ОДНОМ из них нет собственного влияния группы, то окружение
+         * считается тревожным:
+         *
+         *   чёрная группа -> на всех дыханиях итоговое влияние <= 0;
+         *   белая группа  -> на всех дыханиях итоговое влияние >= 0.
+         *
+         * То есть вокруг группы остаётся только нейтральное пространство (0)
+         * или влияние противника.
+         *
+         * Для групп с 1–3 дыханиями тревожное лицо не используется: там уже есть
+         * специальные выражения sad / crying / dying, показывающие тактическую
+         * опасность. Anxious предназначен для групп с 4+ реальными дыханиями,
+         * которые формально устойчивы по дыханиям, но стратегически слабы.
+         */
+        if (!heatmap || !group.stones.length) return false;
+
+        const [gx, gy] = group.stones[0];
+        const realGroup = this.groupAt(gx, gy);
+        const actualLiberties = realGroup.liberties.size;
+
+        if (actualLiberties < 4 || actualLiberties === 0) return false;
+
+        // heatmap хранится в нормализованной шкале:
+        //   0.0 = максимальное белое влияние
+        //   0.5 = нейтраль
+        //   1.0 = максимальное чёрное влияние
+        //
+        // Используем маленький epsilon, чтобы погрешности Float64 около 0.5
+        // не превращали визуально нейтральную точку в "своё влияние".
+        const epsilon = 1e-9;
+
+        for (const key of realGroup.liberties) {
+          const [x, y] = key.split(',').map(Number);
+          const normalized = heatmap[this.index(x, y)];
+          const signed = (normalized - 0.5) * 2;
+
+          // Если хотя бы на одном соседнем перекрёстке есть собственное влияние,
+          // группа НЕ считается тревожной.
+          if (group.color === 1 && signed > epsilon) return false;
+          if (group.color === 2 && signed < -epsilon) return false;
+        }
+
+        return true;
+      };
+
 GoBoard.prototype.drawGroupFaces = function(groups, pad, step, heatmap) {
+        /*
+         * Сначала группа получает обычное лицо по числу дыханий.
+         * Для групп с 4+ реальными дыханиями дополнительно проверяем окружение:
+         * если на всех соседних пустых точках отсутствует собственное влияние,
+         * базовое happy/calm заменяется на anxious.
+         */
         for (const group of groups) {
           const [ax, ay] = group.anchor;
           const [ox, oy] = group.faceOffset;
           const cx = pad + ax * step + ox * step;
           const cy = pad + ay * step + oy * step;
-          const faceState = this.groupFullyInOpponentInfluence(group, heatmap) ? 'anxious' : group.state;
+          const faceState = this.groupHasNoFriendlyInfluenceAround(group, heatmap) ? 'anxious' : group.state;
           this.drawFaceOverlay(cx, cy, step * 0.38, group.color, faceState);
         }
       };
