@@ -162,7 +162,7 @@ class GoBoard {
           return group.stones.length;
         }
 
-  playStone(x, y, stone) {
+  playStone(x, y, stone, draw = true) {
           if (x < 0 || y < 0 || x >= this.size || y >= this.size) return { ok: false, reason: 'outside' };
           if (this.getStone(x, y) !== 0) return { ok: false, reason: 'occupied' };
   
@@ -200,7 +200,7 @@ class GoBoard {
           this.history.push({ pass: false, x, y, stone, before, capturesBefore, captured, previousLastMove });
           this.lastMove = { x, y, stone };
           this.positionHistory.push(afterKey);
-          this.draw();
+          if (draw) this.draw();
           return { ok: true, captured };
         }
 
@@ -215,7 +215,7 @@ class GoBoard {
    * Поэтому простой ko после паса работает корректно: пас разрывает немедленное
    * повторение позиции.
    */
-  playPass(stone) {
+  playPass(stone, draw = true) {
           const before = this.stones.slice();
           const capturesBefore = { ...this.captures };
           const previousLastMove = this.lastMove ? { ...this.lastMove } : null;
@@ -233,7 +233,7 @@ class GoBoard {
 
           this.lastMove = null;
           this.positionHistory.push(this.positionKey());
-          this.draw();
+          if (draw) this.draw();
           return { ok: true, pass: true };
         }
 
