@@ -1,0 +1,234 @@
+:root {
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color-scheme: dark;
+      background: #17191b;
+      color: #eeeeee;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: #17191b; }
+    .shell { min-height: 100vh; }
+    header {
+      height: 58px;
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      gap: 22px;
+      background: #101112;
+      border-bottom: 1px solid #303337;
+    }
+    header b { font: 700 25px Georgia, serif; color: #d9aa63; }
+    header span { color: #9ca3aa; font-size: 14px; }
+    main {
+      display: grid;
+      grid-template-columns: 300px minmax(420px, 1fr);
+      grid-template-areas: "ogs board" "network board" "bot board" "settings board";
+      gap: 16px;
+      padding: 16px;
+      max-width: 1250px;
+      margin: auto;
+      align-items: start;
+    }
+    .panel {
+      background: #222529;
+      border: 1px solid #34383d;
+      border-radius: 12px;
+      padding: 18px;
+    }
+    .ogs { grid-area: ogs; }
+    .network { grid-area: network; }
+    .bot { grid-area: bot; }
+    .settings { grid-area: settings; }
+    .settings button { margin-bottom: 0; }
+    .settingsBody {
+      display: grid;
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .settingsBody[hidden] { display: none; }
+    .settingsGroup {
+      display: grid;
+      gap: 8px;
+      padding-top: 10px;
+      border-top: 1px solid #34383d;
+    }
+    .settingsGroup:first-child {
+      padding-top: 0;
+      border-top: 0;
+    }
+    .settingsGroup h3 {
+      margin: 0;
+      font-size: 13px;
+      color: #d7dbe0;
+      font-weight: 700;
+    }
+    .settingsBody label {
+      margin: 0;
+      font-size: 12px;
+    }
+    .settingsBody input {
+      min-height: 34px;
+      margin: 4px 0 0;
+      font-size: 12px;
+    }
+    .settingsCheck {
+      display: flex !important;
+      align-items: center;
+      gap: 8px;
+      min-height: 28px;
+      cursor: pointer;
+    }
+    .settingsBody .settingsCheck input {
+      width: 16px;
+      height: 16px;
+      min-height: 0;
+      margin: 0;
+      padding: 0;
+      flex: 0 0 auto;
+      accent-color: #b98645;
+    }
+    .controls { grid-area: controls; width: min(82vh, 100%); }
+    .boardWrap {
+      grid-area: board;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+    .boardSidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      width: min(82vh, 100%);
+      flex: 0 0 auto;
+    }
+    .boardModes {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      width: 100%;
+    }
+    .boardModes button {
+      min-height: 34px;
+      margin: 0;
+      padding: 0 10px;
+      font-size: 12px;
+      background: #2d3136;
+      border-color: #454b52;
+      color: #eee;
+    }
+    .boardModes button.active {
+      background: #b98645;
+      border-color: #c49356;
+      color: #15100a;
+    }
+    canvas {
+      width: min(82vh, 100%);
+      aspect-ratio: 1;
+      display: block;
+      border-radius: 4px;
+      box-shadow: 0 14px 40px #0008;
+      touch-action: manipulation;
+    }
+    h2 { font-size: 17px; margin: 0 0 15px; }
+    p { margin: 0 0 12px; line-height: 1.45; }
+    .muted { color: #9ca3aa; font-size: 13px; }
+    input, select, button {
+      width: 100%;
+      min-height: 40px;
+      border-radius: 7px;
+      border: 1px solid #3c4147;
+      background: #17191b;
+      color: #eeeeee;
+      padding: 0 11px;
+      margin: 0 0 10px;
+      font: inherit;
+    }
+    button {
+      cursor: pointer;
+      background: #b98645;
+      border-color: #c49356;
+      color: #15100a;
+      font-weight: 700;
+    }
+    button.secondary { background: #2d3136; border-color: #454b52; color: #eee; }
+    button:disabled { cursor: not-allowed; opacity: .55; }
+    label { display: block; color: #aeb4ba; font-size: 13px; }
+    .msg { min-height: 20px; font-size: 12px; color: #d8b37f; word-break: break-word; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .row button { margin-bottom: 0; }
+    .captureInfo { margin-top: 12px; font-size: 13px; color: #aeb4ba; }
+    .captureInfo strong { color: #eee; }
+    a.gameLink { color: #e4b76e; }
+    .turn {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      margin-bottom: 12px;
+      color: #c7ccd2;
+      font-size: 14px;
+    }
+    .turnStone {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #0a0a0a;
+      border: 1px solid #555;
+      box-shadow: inset -3px -3px 5px #0007, inset 3px 3px 4px #fff2;
+    }
+    .turnStone.white { background: #eee; border-color: #999; box-shadow: inset -3px -3px 5px #aaa7, inset 3px 3px 4px #fff; }
+    .botStatusBox {
+      padding: 10px 11px;
+      border-radius: 8px;
+      background: #17191b;
+      border: 1px solid #34383d;
+      margin: 4px 0 10px;
+      font-size: 12px;
+      line-height: 1.45;
+      color: #c9ced3;
+    }
+    .botScore {
+      margin-top: 10px;
+      padding: 11px;
+      border-radius: 8px;
+      background: #17191b;
+      border: 1px solid #4a4031;
+      color: #e9c98f;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .botScore[hidden] { display: none; }
+    .botThinking { cursor: progress; }
+    .networkLinkBox {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: center;
+      margin-top: 10px;
+    }
+    .networkLinkBox input { margin: 0; min-width: 0; font-size: 12px; }
+    .networkLinkBox button { width: auto; margin: 0; white-space: nowrap; }
+    .networkStatus {
+      padding: 10px 11px;
+      border-radius: 8px;
+      background: #17191b;
+      border: 1px solid #34383d;
+      margin-top: 8px;
+      font-size: 12px;
+      line-height: 1.45;
+      color: #c9ced3;
+    }
+    .networkStatus strong { color: #e9c98f; }
+    .networkBadge { display:inline-block; padding:2px 7px; border:1px solid #454b52; border-radius:999px; margin-right:5px; }
+    @media (max-width: 820px) {
+      main {
+        grid-template-columns: 1fr;
+        grid-template-areas: "ogs" "network" "bot" "settings" "board";
+      }
+      canvas { width: 100%; }
+      .boardWrap { align-items: stretch; }
+      .boardSidebar, .controls { width: 100%; }
+    }
+
+.ogsDisconnected { font-size: 14px; color: #c9ced3; }
