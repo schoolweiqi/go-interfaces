@@ -19,7 +19,7 @@ main {
   display: grid;
   grid-template-columns: 300px minmax(0, 1fr);
   gap: 12px;
-  padding: 12px;
+  padding: 10px 12px 0;
   overflow: hidden;
 }
 
@@ -152,12 +152,12 @@ label { display: block; color: #aeb4ba; font-size: 13px; }
   min-width: 0;
   min-height: 0;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   overflow: hidden;
 }
 .boardColumn {
-  width: min(100%, calc(100vh - 160px));
+  width: min(100%, calc(100vh - 150px));
   max-width: 100%;
   min-width: 0;
   display: flex;
@@ -345,6 +345,7 @@ canvas {
   main {
     height: auto;
     min-height: 100vh;
+    padding-bottom: 0;
     grid-template-columns: 1fr;
     overflow: visible;
   }
