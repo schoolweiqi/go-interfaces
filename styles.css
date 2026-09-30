@@ -33,6 +33,25 @@ main {
   scrollbar-width: thin;
 }
 
+
+/*
+ * Логотип уже обрезан по фактическому содержимому исходного изображения.
+ * Здесь он масштабируется ровно под ширину левого меню без лишних полей.
+ */
+.sidebarLogo {
+  flex: 0 0 auto;
+  width: 100%;
+  padding: 0 4px;
+}
+.sidebarLogo img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 170px;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
 .panel {
   flex: 0 0 auto;
   background: #222529;
