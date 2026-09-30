@@ -2,7 +2,10 @@
  * Runtime files are loaded from the upstream wasm-gnugo pages build.
  * GNU Go is GPL-3.0-or-later. See GNU_GO_NOTICE.md.
  */
-const CDN_BASE = 'https://cdn.jsdelivr.net/gh/TristanCacqueray/wasm-gnugo@pages/';
+// GNU Go хранится локально как независимый GPL-компонент проекта.
+// Лицензия и сведения об исходниках: GNU_GO_NOTICE.md, COPYING-GNUGO.txt,
+// third_party/gnugo-source/.
+const GNU_GO_RUNTIME_BASE = './';
 let moduleInstance = null;
 let modulePromise = null;
 
@@ -12,10 +15,10 @@ async function initEngine() {
   modulePromise = new Promise((resolve, reject) => {
     try {
       self.exports = {};
-      importScripts(CDN_BASE + 'gnugo.js');
+      importScripts(GNU_GO_RUNTIME_BASE + 'gnugo.js');
       if (!self.exports || typeof self.exports.init !== 'function') throw new Error('Не найден exports.init в gnugo.js');
       const Module = {
-        locateFile(path) { return CDN_BASE + path; },
+        locateFile(path) { return GNU_GO_RUNTIME_BASE + path; },
         print() {},
         printErr(message) { if (message) console.warn('[GNU Go]', message); },
         onAbort(reason) { reject(new Error(String(reason || 'GNU Go aborted'))); },
