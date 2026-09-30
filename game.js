@@ -14,6 +14,12 @@ class GoBoard {
           this.showLinks = false;
           this.showInfluence = false;
           this.showInfluenceNumbers = false;
+
+          // Режим "фантом" показывает результат предполагаемого следующего хода
+          // при наведении мыши. Эти поля не входят в игровую историю.
+          this.showPhantom = false;
+          this.phantomHover = null;
+          this.phantomColor = 1;
           this.influenceStrength = 4;
           this.influenceThreeLibFactor = 0.8;
           this.influenceIntensity = 180;
@@ -29,6 +35,8 @@ class GoBoard {
           this.setSize(size);
   
           canvas.addEventListener('click', (event) => this.handleClick(event));
+          canvas.addEventListener('mousemove', (event) => this.handlePhantomPointerMove(event));
+          canvas.addEventListener('mouseleave', () => this.clearPhantomHover());
           window.addEventListener('resize', () => this.draw());
         }
 
@@ -41,6 +49,7 @@ class GoBoard {
           this.captures = { 1: 0, 2: 0 };
           this.sgfSetup = { black: [], white: [] };
           this.sgfKomi = 6.5;
+          this.phantomHover = null;
           this.draw();
         }
 
@@ -145,6 +154,75 @@ class GoBoard {
           const afterKey = board.join('');
           if (this.positionHistory.length >= 2 && afterKey === this.positionHistory[this.positionHistory.length - 2]) return false;
           return true;
+        }
+
+  /*
+   * Рассчитывает результат предполагаемого хода, не изменяя реальную партию.
+   *
+   * Возвращает:
+   *   { ok: true, stones, captured, afterKey }
+   * либо
+   *   { ok: false, reason }
+   *
+   * Алгоритм повторяет playStone(): занятость, захват, самоубийство и простое ko.
+   * Он нужен режиму "фантом", чтобы предпросмотр был идентичен настоящему ходу.
+   */
+  simulateStone(x, y, stone) {
+          if (x < 0 || y < 0 || x >= this.size || y >= this.size) {
+            return { ok: false, reason: 'outside' };
+          }
+          if (this.getStone(x, y) !== 0) {
+            return { ok: false, reason: 'occupied' };
+          }
+
+          const simulated = this.stones.slice();
+          this.setStoneOnBoard(simulated, x, y, stone);
+
+          const opponent = stone === 1 ? 2 : 1;
+          const checked = new Set();
+          let captured = 0;
+
+          for (const [nx, ny] of this.neighbors(x, y)) {
+            if (this.getStoneFromBoard(simulated, nx, ny) !== opponent) continue;
+
+            const key = `${nx},${ny}`;
+            if (checked.has(key)) continue;
+
+            const group = this.groupAtOnBoard(simulated, nx, ny);
+            for (const [gx, gy] of group.stones) checked.add(`${gx},${gy}`);
+
+            if (group.liberties.size === 0) {
+              captured += group.stones.length;
+              for (const [gx, gy] of group.stones) {
+                this.setStoneOnBoard(simulated, gx, gy, 0);
+              }
+            }
+          }
+
+          // Самоубийственный ход недопустим.
+          if (this.groupAtOnBoard(simulated, x, y).liberties.size === 0) {
+            return { ok: false, reason: 'suicide' };
+          }
+
+          const afterKey = simulated.join('');
+
+          // Используем то же правило простого ko, что и в playStone().
+          if (
+            this.positionHistory.length >= 2 &&
+            afterKey === this.positionHistory[this.positionHistory.length - 2]
+          ) {
+            return { ok: false, reason: 'ko' };
+          }
+
+          return {
+            ok: true,
+            stones: simulated,
+            captured,
+            afterKey,
+            x,
+            y,
+            stone
+          };
         }
 
   bonusLibertiesForGroup(group, color) {
