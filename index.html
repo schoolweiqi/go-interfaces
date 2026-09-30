@@ -177,7 +177,21 @@
       </aside>
 
       <section class="boardWrap">
-        <canvas id="board" aria-label="Доска Го"></canvas>
+        <div class="boardColumn">
+          <canvas id="board" aria-label="Доска Го" title="Колесо мыши: назад / вперёд по партии"></canvas>
+
+          <section class="gameTreeSection" aria-label="Дерево игры">
+            <div class="gameTreeHeader">
+              <strong>Дерево игры</strong>
+              <button id="deleteVariationBranch" class="secondary treeDeleteButton" type="button" disabled>
+                Удалить ветку от текущего хода
+              </button>
+            </div>
+            <div id="gameTreeScroller" class="gameTreeScroller">
+              <svg id="gameTreeSvg" class="gameTreeSvg" role="img" aria-label="Дерево ходов и вариаций"></svg>
+            </div>
+          </section>
+        </div>
       </section>
     </main>
   </div>
@@ -190,6 +204,7 @@
   <script src="ogs.js"></script>
   <script src="ai.js"></script>
   <script src="sgf.js"></script>
+  <script src="tree.js"></script>
   <script src="ui.js"></script>
   <script src="app.js"></script>
 </body>
