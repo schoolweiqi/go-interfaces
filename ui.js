@@ -81,8 +81,16 @@
     const loadSgfButton = document.getElementById('loadSgf');
     const downloadSgfButton = document.getElementById('downloadSgf');
     const sgfFileInput = document.getElementById('sgfFileInput');
+    const gameTreeSvg = document.getElementById('gameTreeSvg');
+    const gameTreeScroller = document.getElementById('gameTreeScroller');
+    const deleteVariationBranchButton = document.getElementById('deleteVariationBranch');
 
     let turn = 1; // 1 = black, 2 = white
+
+    // Дерево вариантов живёт отдельно от линейной board.history.
+    // board.history всегда отражает путь от корня до ТЕКУЩЕГО выбранного узла.
+    const gameTree = new GameTree({ size: board.size, komi: 6.5, initialTurn: 1 });
+    window.goGameTree = gameTree;
     const botEngine = new GnuGoBotEngine();
     const botSizeSelect = document.getElementById('botSize');
     const botLevelSelect = document.getElementById('botLevel');
@@ -129,9 +137,11 @@
     };
 
     function currentMoveNumber() {
-      // В локальной партии и партии с GNU Go вся последовательность, включая пас,
-      // хранится непосредственно в board.history.
-      if (gameMode !== 'network') return board.history.length;
+      // В локальном режиме номер хода определяется выбранным узлом дерева.
+      if (gameMode === 'local') return gameTree.current.depth;
+
+      // В партии с GNU Go история пока остаётся линейной.
+      if (gameMode === 'bot') return board.history.length;
 
       // Сетевой сервер может прислать готовый счётчик. Если в старом состоянии
       // его нет, показываем доступную длину массива ходов либо 0.
@@ -160,6 +170,73 @@
     function switchTurn() {
       turn = turn === 1 ? 2 : 1;
       updateTurn();
+    }
+
+    function updateGameTreeView() {
+      renderGameTree(gameTree, gameTreeSvg, gameTreeScroller);
+      deleteVariationBranchButton.disabled = gameMode !== 'local' || gameTree.current === gameTree.root;
+    }
+
+    /*
+     * Полностью восстанавливаем позицию выбранного узла.
+     * Это надёжнее, чем пытаться вручную откатывать захваты между произвольными
+     * вариациями: правила Го заново воспроизводят ровно путь root -> current.
+     */
+    function restoreTreePosition(node) {
+      gameTree.select(node);
+      const meta = gameTree.meta;
+
+      board.setSize(meta.size);
+      board.sgfKomi = meta.komi;
+      board.sgfSetup = {
+        black: meta.setupBlack.map(p => p.slice()),
+        white: meta.setupWhite.map(p => p.slice())
+      };
+
+      for (const [x, y] of meta.setupBlack) board.setStone(x, y, 1);
+      for (const [x, y] of meta.setupWhite) board.setStone(x, y, 2);
+
+      board.history = [];
+      board.lastMove = null;
+      board.captures = { 1: 0, 2: 0 };
+      board.positionHistory = [board.positionKey()];
+
+      turn = meta.initialTurn;
+      const path = gameTree.pathTo(node);
+
+      for (const treeNode of path) {
+        const move = treeNode.move;
+        if (move.pass) {
+          board.playPass(move.color, false);
+        } else {
+          const result = board.playStone(move.x, move.y, move.color, false);
+          if (!result.ok) {
+            throw new Error(`Невозможно восстановить ход №${treeNode.depth}: ${result.reason}`);
+          }
+        }
+        turn = move.color === 1 ? 2 : 1;
+      }
+
+      board.draw();
+      updateTurn();
+      updateCaptures();
+      updateGameTreeView();
+    }
+
+    function resetGameTreeFromBoard(initialTurn = 1) {
+      gameTree.reset({
+        size: board.size,
+        komi: board.sgfKomi,
+        initialTurn,
+        setupBlack: (board.sgfSetup?.black || []).map(p => p.slice()),
+        setupWhite: (board.sgfSetup?.white || []).map(p => p.slice())
+      });
+      updateGameTreeView();
+    }
+
+    function recordLocalTreeMove(move) {
+      gameTree.addMove(move);
+      updateGameTreeView();
     }
 
     board.onIntersection = async (x, y) => {
@@ -199,6 +276,7 @@
         return;
       }
       if (result.captured) gameMsg.textContent = `Снято камней: ${result.captured}.`;
+      recordLocalTreeMove({ color: turn, pass: false, x, y });
       updateCaptures();
       switchTurn();
     };
@@ -210,6 +288,7 @@
       }
       board.setSize(Number(sizeSelect.value));
       turn = 1;
+      resetGameTreeFromBoard(turn);
       updateTurn();
       updateCaptures();
       gameMsg.textContent = `Доска изменена на ${sizeSelect.value} × ${sizeSelect.value}.`;
@@ -220,6 +299,7 @@
       gameMode = 'local';
       board.setSize(Number(sizeSelect.value));
       turn = 1;
+      resetGameTreeFromBoard(turn);
       updateTurn();
       updateCaptures();
       gameMsg.textContent = `Локальная тестовая партия: ${sizeSelect.value} × ${sizeSelect.value}. Снятие групп, запрет самоубийства и простое ко включены.`;
@@ -252,6 +332,7 @@
       }
       const passingColor = turn;
       board.playPass(passingColor);
+      recordLocalTreeMove({ color: passingColor, pass: true, x: null, y: null });
       gameMsg.textContent = passingColor === 1 ? 'Чёрные пасуют.' : 'Белые пасуют.';
       switchTurn();
     });
@@ -265,17 +346,13 @@
         gameMsg.textContent = 'Отмена хода в партии с GNU Go пока отключена.';
         return;
       }
-      const undone = board.undo();
-      if (!undone) {
+      if (gameTree.current === gameTree.root) {
         gameMsg.textContent = 'Ходов для отмены нет.';
         return;
       }
-      turn = undone.stone;
-      updateTurn();
-      updateCaptures();
-      gameMsg.textContent = undone.pass
-        ? 'Последний пас отменён.'
-        : 'Последний ход отменён вместе со снятыми камнями.';
+      const previous = gameTree.current.parent;
+      restoreTreePosition(previous);
+      gameMsg.textContent = 'Переход на один ход назад. Ветка сохранена в дереве.';
     });
 
     /*
@@ -297,45 +374,13 @@
         gameMode = 'local';
 
         const text = await file.text();
-        const parsed = parseSgfGame(text);
+        const parsed = parseSgfGameWithVariations(text);
 
-        board.setSize(parsed.size);
-        board.sgfKomi = parsed.komi;
-        board.sgfSetup = {
-          black: parsed.setupBlack.map(p => [p.x, p.y]),
-          white: parsed.setupWhite.map(p => [p.x, p.y])
-        };
+        // Импортируем ВСЁ дерево SGF. Текущим становится конец главной вариации.
+        gameTree.importSgf(parsed);
+        restoreTreePosition(gameTree.current);
 
-        // Сначала устанавливаем handicap/setup-камни из AB/AW.
-        for (const p of parsed.setupBlack) board.setStone(p.x, p.y, 1);
-        for (const p of parsed.setupWhite) board.setStone(p.x, p.y, 2);
-
-        // Setup — это исходная позиция, а не игровые ходы.
-        board.history = [];
-        board.lastMove = null;
-        board.captures = { 1: 0, 2: 0 };
-        board.positionHistory = [board.positionKey()];
-
-        turn = parsed.initialTurn;
-
-        // Воспроизводим основную ветку SGF и одновременно получаем корректные
-        // захваты, ko-history, номер хода и возможность отмены.
-        for (const move of parsed.moves) {
-          if (move.pass) {
-            board.playPass(move.color);
-          } else {
-            const result = board.playStone(move.x, move.y, move.color);
-            if (!result.ok) {
-              throw new Error(`Недопустимый ход №${board.history.length + 1} в SGF: ${result.reason}`);
-            }
-          }
-          turn = move.color === 1 ? 2 : 1;
-        }
-
-        board.draw();
-        updateTurn();
-        updateCaptures();
-        gameMsg.textContent = `SGF загружен: ${file.name}. Ходов: ${board.history.length}.`;
+        gameMsg.textContent = `SGF загружен: ${file.name}. Ходов в текущей линии: ${gameTree.current.depth}.`;
       } catch (error) {
         gameMsg.textContent = `Не удалось загрузить SGF: ${error.message}`;
       }
@@ -343,14 +388,60 @@
 
     downloadSgfButton.addEventListener('click', () => {
       try {
-        const sgf = buildSgfFromBoard(board);
+        const sgf = gameMode === 'local'
+          ? buildSgfFromGameTree(gameTree)
+          : buildSgfFromBoard(board);
         const name = `go-game-${new Date().toISOString().slice(0, 10)}.sgf`;
         downloadSgfFile(name, sgf);
-        gameMsg.textContent = `SGF сохранён. Ходов: ${board.history.length}.`;
+        gameMsg.textContent = gameMode === 'local'
+          ? `SGF сохранён вместе с вариациями. Текущий ход: ${gameTree.current.depth}.`
+          : `SGF сохранён. Ходов: ${board.history.length}.`;
       } catch (error) {
         gameMsg.textContent = `Не удалось создать SGF: ${error.message}`;
       }
     });
+
+    /*
+     * Колесо над доской:
+     * вверх — один ход назад;
+     * вниз — один ход вперёд по выбранной (preferred) вариации.
+     */
+    board.canvas.addEventListener('wheel', (event) => {
+      if (gameMode !== 'local') return;
+      event.preventDefault();
+
+      const before = gameTree.current;
+      const target = event.deltaY < 0 ? gameTree.stepBack() : gameTree.stepForward();
+      if (target !== before) restoreTreePosition(target);
+    }, { passive: false });
+
+    // Клик по узлу дерева сразу переводит доску в соответствующую позицию.
+    gameTreeSvg.addEventListener('click', (event) => {
+      if (gameMode !== 'local') return;
+      const element = event.target.closest('[data-node-id]');
+      if (!element) return;
+      const node = gameTree.nodes.get(Number(element.dataset.nodeId));
+      if (!node) return;
+      restoreTreePosition(node);
+    });
+
+    deleteVariationBranchButton.addEventListener('click', () => {
+      if (gameMode !== 'local' || gameTree.current === gameTree.root) return;
+
+      const moveNo = gameTree.current.depth;
+      const childCount = gameTree.current.children.length;
+      const suffix = childCount ? ' вместе со всеми последующими ходами этой ветки' : '';
+      const ok = window.confirm(`Удалить ветку начиная с хода №${moveNo}${suffix}? Это действие нельзя отменить.`);
+      if (!ok) return;
+
+      if (gameTree.deleteCurrentBranch()) {
+        restoreTreePosition(gameTree.current);
+        gameMsg.textContent = `Ветка от хода №${moveNo} удалена.`;
+      }
+    });
+
+    // Первичное дерево: только корневая позиция.
+    updateGameTreeView();
 
     startBotButton.addEventListener('click', () => startBotGame().catch(error => {
       botStatus.textContent = `Ошибка запуска: ${error.message}`;
