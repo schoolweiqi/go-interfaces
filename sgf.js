@@ -196,3 +196,79 @@ function downloadSgfFile(filename, sgf) {
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
+
+
+/*
+ * Возвращает метаданные SGF вместе с исходным древовидным представлением.
+ * В отличие от parseSgfGame(), эта функция НЕ схлопывает вариации в главную линию.
+ */
+function parseSgfGameWithVariations(text) {
+  const rawTree = parseSgfCollection(text)[0];
+  if (!rawTree || !rawTree.sequence || !rawTree.sequence.length) {
+    throw new Error('SGF не содержит узлов.');
+  }
+
+  const root = rawTree.sequence[0];
+  const size = Number(root.SZ && root.SZ[0] ? root.SZ[0] : 19);
+  if (![9, 13, 19].includes(size)) {
+    throw new Error(`Сейчас поддерживаются доски 9×9, 13×13 и 19×19; в SGF указано SZ[${size}].`);
+  }
+
+  const komiRaw = root.KM && root.KM[0];
+  const komi = Number.isFinite(Number(komiRaw)) ? Number(komiRaw) : 6.5;
+  const setupBlack = (root.AB || []).map(v => sgfPointToXY(v, size)).filter(p => !p.pass);
+  const setupWhite = (root.AW || []).map(v => sgfPointToXY(v, size)).filter(p => !p.pass);
+
+  let initialTurn = root.PL && String(root.PL[0]).toUpperCase() === 'W' ? 2 : 1;
+  if (!root.PL && setupBlack.length >= 2 && setupWhite.length === 0) initialTurn = 2;
+
+  return { rawTree, size, komi, setupBlack, setupWhite, initialTurn };
+}
+
+function moveFromSgfNode(node, size) {
+  if (node.B && node.B.length) {
+    return { color: 1, ...sgfPointToXY(node.B[0], size) };
+  }
+  if (node.W && node.W.length) {
+    return { color: 2, ...sgfPointToXY(node.W[0], size) };
+  }
+  return null;
+}
+
+/*
+ * Экспортирует не только текущую линию, но всё дерево вариаций.
+ * У каждого узла с несколькими детьми каждый ребёнок сериализуется
+ * как отдельная SGF-вариация в круглых скобках.
+ */
+function buildSgfFromGameTree(gameTree) {
+  const meta = gameTree.meta;
+  let rootNode = `;GM[1]FF[4]CA[UTF-8]AP[SchoolWeiqi-GoInterfaces]SZ[${meta.size}]KM[${meta.komi}]`;
+
+  if (meta.initialTurn === 2) rootNode += 'PL[W]';
+  if (meta.setupBlack.length) {
+    rootNode += 'AB' + meta.setupBlack.map(([x, y]) => `[${xyToSgfPoint(x, y)}]`).join('');
+  }
+  if (meta.setupWhite.length) {
+    rootNode += 'AW' + meta.setupWhite.map(([x, y]) => `[${xyToSgfPoint(x, y)}]`).join('');
+  }
+
+  function serializeMove(node) {
+    const move = node.move;
+    const color = move.color === 1 ? 'B' : 'W';
+    const coord = move.pass ? '' : xyToSgfPoint(move.x, move.y);
+    return `;${color}[${coord}]`;
+  }
+
+  function serializeChildren(parent) {
+    if (!parent.children.length) return '';
+    if (parent.children.length === 1) {
+      const child = parent.children[0];
+      return serializeMove(child) + serializeChildren(child);
+    }
+    return parent.children
+      .map(child => '(' + serializeMove(child) + serializeChildren(child) + ')')
+      .join('');
+  }
+
+  return '(' + rootNode + serializeChildren(gameTree.root) + ')';
+}
