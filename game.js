@@ -39,6 +39,8 @@ class GoBoard {
           this.lastMove = null;
           this.positionHistory = [this.positionKey()];
           this.captures = { 1: 0, 2: 0 };
+          this.sgfSetup = { black: [], white: [] };
+          this.sgfKomi = 6.5;
           this.draw();
         }
 
@@ -195,11 +197,44 @@ class GoBoard {
           }
   
           this.captures[stone] += captured;
-          this.history.push({ x, y, stone, before, capturesBefore, captured, previousLastMove });
+          this.history.push({ pass: false, x, y, stone, before, capturesBefore, captured, previousLastMove });
           this.lastMove = { x, y, stone };
           this.positionHistory.push(afterKey);
           this.draw();
           return { ok: true, captured };
+        }
+
+  /*
+   * Пас хранится в той же истории, что и обычный ход.
+   * Это нужно сразу для трёх вещей:
+   *  - корректного номера хода;
+   *  - отмены паса;
+   *  - экспорта полной последовательности в SGF.
+   *
+   * Позиция после паса физически не меняется, но добавляется в positionHistory.
+   * Поэтому простой ko после паса работает корректно: пас разрывает немедленное
+   * повторение позиции.
+   */
+  playPass(stone) {
+          const before = this.stones.slice();
+          const capturesBefore = { ...this.captures };
+          const previousLastMove = this.lastMove ? { ...this.lastMove } : null;
+
+          this.history.push({
+            pass: true,
+            x: null,
+            y: null,
+            stone,
+            before,
+            capturesBefore,
+            captured: 0,
+            previousLastMove
+          });
+
+          this.lastMove = null;
+          this.positionHistory.push(this.positionKey());
+          this.draw();
+          return { ok: true, pass: true };
         }
 
   undo() {
