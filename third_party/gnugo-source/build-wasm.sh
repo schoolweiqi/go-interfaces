@@ -2,6 +2,9 @@
 set -euo pipefail
 
 export CFLAGS="-g -O2 -Wno-format-security -Wno-constant-conversion"
+# GNU Go 3.9.1 documentation does not build with modern Texinfo.
+# Documentation is not needed for the browser engine, so disable makeinfo.
+export MAKEINFO=true
 
 mkdir -p build/native
 pushd build/native
