@@ -50,20 +50,47 @@ self.onmessage = async (event) => {
   try {
     const Module = await initEngine();
     if (msg.type === 'init') {
-      self.postMessage({ id, type: 'ready', ok: true, version: versionOf(Module), exactFinalScore: !!Module._score_final, levelSupported: !!Module._play_level });
+      self.postMessage({
+        id,
+        type: 'ready',
+        ok: true,
+        version: versionOf(Module),
+        exactFinalScore: !!Module._score_final,
+        levelSupported: !!Module._play_level && !!Module._get_level
+      });
       return;
     }
     if (msg.type === 'play') {
       const level = Math.max(0, Math.min(10, Number(msg.level ?? 10)));
       let sgf;
       let levelApplied = false;
-      if (Module._play_level) {
-        sgf = Module.ccall('play_level', 'string', ['number', 'number', 'string'], [Number(msg.seed || 0), level, String(msg.sgf || '')]);
-        levelApplied = true;
+      let appliedLevel = 10;
+
+      if (Module._play_level && Module._get_level) {
+        sgf = Module.ccall(
+          'play_level',
+          'string',
+          ['number', 'number', 'string'],
+          [Number(msg.seed || 0), level, String(msg.sgf || '')]
+        );
+
+        // Проверяем значение непосредственно внутри GNU Go, а не только факт
+        // передачи параметра из интерфейса.
+        appliedLevel = Number(Module.ccall('get_level', 'number', [], []));
+        levelApplied = appliedLevel === level;
       } else {
         sgf = Module.ccall('play', 'string', ['number', 'string'], [Number(msg.seed || 0), String(msg.sgf || '')]);
       }
-      self.postMessage({ id, type: 'play', ok: true, sgf, requestedLevel: level, levelApplied });
+
+      self.postMessage({
+        id,
+        type: 'play',
+        ok: true,
+        sgf,
+        requestedLevel: level,
+        appliedLevel,
+        levelApplied
+      });
       return;
     }
     if (msg.type === 'score') {
