@@ -93,7 +93,6 @@
 
         <section class="panel bot">
           <h2>Игра с GNU Go</h2>
-          <p class="muted">Бот работает в браузере через WebAssembly. Для первого запуска требуется загрузка движка GNU Go.</p>
           <label>
             Размер доски
             <select id="botSize">
@@ -141,12 +140,6 @@
           <button id="settingsToggle" class="secondary" type="button" aria-expanded="false">Настройки</button>
           <div id="settingsBody" class="settingsBody" hidden>
             <div class="settingsGroup">
-              <h3>Связи</h3>
-              <label>Толщина перемычек
-                <input id="linkThickness" type="number" min="0.3" max="3" step="0.1" value="1">
-              </label>
-            </div>
-            <div class="settingsGroup">
               <h3>Влияние</h3>
               <label>Сила влияния
                 <input id="influenceStrength" type="number" min="1" max="20" step="1" value="4">
@@ -177,7 +170,7 @@
 
       <section class="boardWrap">
         <div class="boardColumn">
-          <canvas id="board" aria-label="Доска Го" title="Колесо мыши: назад / вперёд по партии"></canvas>
+          <canvas id="board" aria-label="Доска Го"></canvas>
 
           <section class="gameTreeSection" aria-label="Дерево игры">
             <div class="gameTreeHeader">
