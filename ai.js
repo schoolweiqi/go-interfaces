@@ -86,6 +86,19 @@
 
     function colorName(color) { return color === 1 ? 'чёрные' : 'белые'; }
 
+    function createBotSeed() {
+      // Наша WASM-обёртка принимает seed как C int, поэтому используем
+      // положительный 31-битный диапазон: 1..2147483647.
+      // crypto.getRandomValues даёт качественную случайность; fallback нужен
+      // только для старых окружений без Web Crypto.
+      if (globalThis.crypto && typeof globalThis.crypto.getRandomValues === 'function') {
+        const value = new Uint32Array(1);
+        globalThis.crypto.getRandomValues(value);
+        return (value[0] & 0x7fffffff) || 1;
+      }
+      return Math.floor(Math.random() * 0x7fffffff) + 1;
+    }
+
     function buildBotSgf() {
       const header = `(;GM[1]FF[4]CA[UTF-8]AP[SchoolWeiqi-GoInterfaces]SZ[${board.size}]KM[${botGame.komi}]RU[Japanese]`;
       const moves = botGame.moves.map(move => `;${move.color === 1 ? 'B' : 'W'}[${move.pass ? '' : sgfCoord(move.x, move.y)}]`).join('');
@@ -112,7 +125,7 @@
       botGame.ended = true;
       setBotThinking(true, `${reason} GNU Go считает результат…`);
       try {
-        const result = await botEngine.score(buildBotSgf(), 0);
+        const result = await botEngine.score(buildBotSgf(), botGame.seed);
         const label = formatGnuGoScore(result.score);
         botScore.hidden = false;
         botScore.innerHTML = `<b>Результат GNU Go: ${label}</b><br>${result.exact ? 'Финальный подсчёт GNU Go.' : 'Подсчёт выполнен экспортированной функцией score() браузерной сборки GNU Go.'}`;
@@ -145,7 +158,7 @@
       setBotThinking(true, 'GNU Go думает…');
       try {
         const beforeCount = botGame.moves.length;
-        const moveResponse = await botEngine.generateMove(buildBotSgf(), 0, botGame.level);
+        const moveResponse = await botEngine.generateMove(buildBotSgf(), botGame.seed, botGame.level);
         const outputSgf = moveResponse.sgf;
         botGame.levelApplied = moveResponse.levelApplied === true;
         botGame.appliedLevel = Number.isFinite(Number(moveResponse.appliedLevel))
@@ -193,6 +206,7 @@
       botGame.komi = Number(botKomiInput.value);
       if (!Number.isFinite(botGame.komi)) botGame.komi = 6.5;
       botGame.level = Math.max(0, Math.min(10, Number(botLevelSelect.value) || 0));
+      botGame.seed = createBotSeed();
       botGame.levelApplied = false;
       botGame.appliedLevel = 10;
       board.setSize(Number(botSizeSelect.value));
