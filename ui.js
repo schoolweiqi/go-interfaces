@@ -14,7 +14,6 @@
     const influenceGradientFalloffInput = document.getElementById('influenceGradientFalloff');
     const influenceStonePointClampInput = document.getElementById('influenceStonePointClamp');
     const influenceNumbersInput = document.getElementById('influenceNumbers');
-    const linkThicknessInput = document.getElementById('linkThickness');
     const settingsToggle = document.getElementById('settingsToggle');
     const settingsBody = document.getElementById('settingsBody');
 
@@ -43,10 +42,6 @@
       settingsBody.hidden = !opening;
       settingsToggle.setAttribute('aria-expanded', String(opening));
       settingsToggle.classList.toggle('active', opening);
-    });
-    linkThicknessInput.addEventListener('input', () => {
-      board.setLinkThickness(linkThicknessInput.value);
-      linkThicknessInput.value = String(Number(board.linkThickness.toFixed(2)));
     });
     influenceStrengthInput.addEventListener('input', () => {
       board.setInfluenceStrength(influenceStrengthInput.value);
