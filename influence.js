@@ -29,11 +29,26 @@ GoBoard.prototype.updateFogExploration = function() {
           const signed = (heatmap[i] - 0.5) * 2;
           if (signed > epsilon) this.fogExplored[1][i] = 1;
           if (signed < -epsilon) this.fogExplored[2][i] = 1;
+        }
 
-          // Собственный камень всегда считается разведанной точкой, даже если
-          // группа временно имеет слишком мало дыханий для поля влияния.
-          const stone = this.stones[i];
-          if (stone === 1 || stone === 2) this.fogExplored[stone][i] = 1;
+        // Каждый собственный камень дополнительно "разведывает" квадрат 3×3:
+        // сам перекрёсток и восемь соседних. Разведка сохраняется навсегда,
+        // потому что мы только устанавливаем биты и никогда не снимаем их
+        // при обычном обновлении позиции.
+        for (let y = 0; y < this.size; y++) {
+          for (let x = 0; x < this.size; x++) {
+            const stone = this.getStone(x, y);
+            if (stone !== 1 && stone !== 2) continue;
+
+            for (let dy = -1; dy <= 1; dy++) {
+              for (let dx = -1; dx <= 1; dx++) {
+                const nx = x + dx;
+                const ny = y + dy;
+                if (nx < 0 || ny < 0 || nx >= this.size || ny >= this.size) continue;
+                this.fogExplored[stone][this.index(nx, ny)] = 1;
+              }
+            }
+          }
         }
       };
 
@@ -69,34 +84,44 @@ GoBoard.prototype.drawFogOverlay = function(pad, step, cssSize) {
         const explored = this.fogExplored && this.fogExplored[this.fogViewerColor];
         if (!explored) return;
 
-        const fog = document.createElement('canvas');
-        fog.width = Math.max(1, Math.round(cssSize));
-        fog.height = Math.max(1, Math.round(cssSize));
-        const f = fog.getContext('2d');
+        const c = this.ctx;
+        c.save();
 
-        f.fillStyle = 'rgba(8,10,12,.985)';
-        f.fillRect(0, 0, fog.width, fog.height);
-        f.globalCompositeOperation = 'destination-out';
+        /*
+         * Неразведанная область закрывается НЕ полупрозрачным затемнением,
+         * а полностью непрозрачными ячейками. Граница каждой ячейки проходит
+         * посередине между соседними перекрёстками.
+         *
+         * Это важно для приватности режима: камень на скрытом перекрёстке
+         * целиком находится внутри своей закрытой ячейки и не может просвечивать
+         * ни цветом, ни силуэтом через туман.
+         */
+        c.fillStyle = '#0b0d10';
 
-        const radius = step * 0.82;
         for (let y = 0; y < this.size; y++) {
           for (let x = 0; x < this.size; x++) {
-            if (!explored[this.index(x, y)]) continue;
+            if (explored[this.index(x, y)]) continue;
+
             const cx = pad + x * step;
             const cy = pad + y * step;
-            const g = f.createRadialGradient(cx, cy, radius * 0.52, cx, cy, radius);
-            g.addColorStop(0, 'rgba(0,0,0,1)');
-            g.addColorStop(0.62, 'rgba(0,0,0,.96)');
-            g.addColorStop(1, 'rgba(0,0,0,0)');
-            f.fillStyle = g;
-            f.beginPath();
-            f.arc(cx, cy, radius, 0, Math.PI * 2);
-            f.fill();
+
+            const left = x === 0 ? 0 : cx - step * 0.5;
+            const right = x === this.size - 1 ? cssSize : cx + step * 0.5;
+            const top = y === 0 ? 0 : cy - step * 0.5;
+            const bottom = y === this.size - 1 ? cssSize : cy + step * 0.5;
+
+            // Небольшой нахлёст устраняет субпиксельные щели между соседними
+            // непрозрачными ячейками на экранах с дробным devicePixelRatio.
+            c.fillRect(
+              Math.floor(left) - 1,
+              Math.floor(top) - 1,
+              Math.ceil(right - left) + 2,
+              Math.ceil(bottom - top) + 2
+            );
           }
         }
 
-        f.globalCompositeOperation = 'source-over';
-        this.ctx.drawImage(fog, 0, 0, cssSize, cssSize);
+        c.restore();
         this.drawFogGuideGrid(pad, step, cssSize);
       };
 
