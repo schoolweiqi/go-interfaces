@@ -35,9 +35,11 @@ This architectural statement does not remove, replace, or limit any obligations 
 
 ## Modifications
 
-The current browser runtime is based on the upstream wasm-gnugo build.
+The browser runtime is a project-specific build based on upstream wasm-gnugo.
 
-If this project introduces a custom GNU Go build — for example a `play_level(seed, level, sgf)` export — the corresponding modified source and build instructions must be stored under `third_party/gnugo-source/` or another source location explicitly identified here.
+Project modification: the browser interface exports `play_level(seed, level, sgf)` and `get_level()` so the School interface can select and verify GNU Go strength levels 0–10.
+
+The corresponding patch and reproducible build instructions are stored in `third_party/gnugo-source/`.
 
 ## No warranty
 
