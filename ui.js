@@ -110,6 +110,7 @@
       botColor: 2,
       komi: 6.5,
       level: 10,
+      seed: 1,
       levelApplied: false,
       moves: [],
       consecutivePasses: 0
