@@ -1,39 +1,63 @@
-name: Vendor GNU Go WASM
+name: Build custom GNU Go WASM
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
     paths:
+      - "third_party/gnugo-source/**"
       - ".github/workflows/vendor-gnugo.yml"
 
 permissions:
   contents: write
 
 jobs:
-  vendor:
+  build:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
+      - name: Check out School Go interface
         uses: actions/checkout@v4
 
-      - name: Download pinned GNU Go browser runtime
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+
+      - name: Check out pinned wasm-gnugo source
         run: |
           set -euo pipefail
-          curl -L --fail --retry 3 \
-            "https://raw.githubusercontent.com/TristanCacqueray/wasm-gnugo/pages/gnugo.wasm" \
-            -o gnugo.wasm
+          git clone https://github.com/TristanCacqueray/wasm-gnugo.git /tmp/wasm-gnugo
+          cd /tmp/wasm-gnugo
+          git checkout 382df5a9b14b62ea451012ec7d2e81c61162e037
+          git apply "$GITHUB_WORKSPACE/third_party/gnugo-source/play-level.patch"
+          cp "$GITHUB_WORKSPACE/third_party/gnugo-source/build-wasm.sh" ./schoolgo-build-wasm.sh
+          chmod +x ./schoolgo-build-wasm.sh
+
+      - name: Build GNU Go with selectable strength
+        working-directory: /tmp/wasm-gnugo
+        run: |
+          nix-shell ./default.nix --run "./schoolgo-build-wasm.sh"
+
+      - name: Verify selectable-level exports
+        working-directory: /tmp/wasm-gnugo
+        run: |
+          set -euo pipefail
+          grep -q '_play_level' gnugo.js
+          grep -q '_get_level' gnugo.js
           test -s gnugo.wasm
 
-      - name: Commit runtime binary
+      - name: Install runtime into project
+        run: |
+          cp /tmp/wasm-gnugo/gnugo.js "$GITHUB_WORKSPACE/gnugo.js"
+          cp /tmp/wasm-gnugo/gnugo.wasm "$GITHUB_WORKSPACE/gnugo.wasm"
+
+      - name: Commit generated runtime
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add gnugo.wasm
+          git add gnugo.js gnugo.wasm
           if git diff --cached --quiet; then
-            echo "gnugo.wasm is already up to date"
+            echo "GNU Go runtime already up to date"
             exit 0
           fi
-          git commit -m "Vendor GNU Go WASM runtime"
+          git commit -m "Build GNU Go WASM with selectable strength"
           git push
