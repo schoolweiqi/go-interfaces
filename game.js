@@ -14,6 +14,9 @@ class GoBoard {
           this.showLinks = false;
           this.showInfluence = false;
           this.showInfluenceNumbers = false;
+          this.showFog = false;
+          this.fogViewerColor = 1;
+          this.fogExplored = { 1: new Uint8Array(0), 2: new Uint8Array(0) };
 
           // Режим "фантом" показывает результат предполагаемого следующего хода
           // при наведении мыши. Эти поля не входят в игровую историю.
@@ -50,6 +53,10 @@ class GoBoard {
           this.sgfSetup = { black: [], white: [] };
           this.sgfKomi = 6.5;
           this.phantomHover = null;
+          this.fogExplored = {
+            1: new Uint8Array(this.size * this.size),
+            2: new Uint8Array(this.size * this.size)
+          };
           this.draw();
         }
 
@@ -247,6 +254,10 @@ class GoBoard {
           const before = this.stones.slice();
           const capturesBefore = { ...this.captures };
           const previousLastMove = this.lastMove ? { ...this.lastMove } : null;
+          const fogBefore = {
+            1: this.fogExplored[1].slice(),
+            2: this.fogExplored[2].slice()
+          };
           this.setStone(x, y, stone);
   
           const opponent = stone === 1 ? 2 : 1;
@@ -275,9 +286,10 @@ class GoBoard {
           }
   
           this.captures[stone] += captured;
-          this.history.push({ pass: false, x, y, stone, before, capturesBefore, captured, previousLastMove });
+          this.history.push({ pass: false, x, y, stone, before, capturesBefore, captured, previousLastMove, fogBefore });
           this.lastMove = { x, y, stone };
           this.positionHistory.push(afterKey);
+          if (typeof this.updateFogExploration === 'function') this.updateFogExploration();
           if (draw) this.draw();
           return { ok: true, captured };
         }
@@ -297,6 +309,10 @@ class GoBoard {
           const before = this.stones.slice();
           const capturesBefore = { ...this.captures };
           const previousLastMove = this.lastMove ? { ...this.lastMove } : null;
+          const fogBefore = {
+            1: this.fogExplored[1].slice(),
+            2: this.fogExplored[2].slice()
+          };
 
           this.history.push({
             pass: true,
@@ -306,11 +322,13 @@ class GoBoard {
             before,
             capturesBefore,
             captured: 0,
-            previousLastMove
+            previousLastMove,
+            fogBefore
           });
 
           this.lastMove = null;
           this.positionHistory.push(this.positionKey());
+          if (typeof this.updateFogExploration === 'function') this.updateFogExploration();
           if (draw) this.draw();
           return { ok: true, pass: true };
         }
@@ -322,6 +340,12 @@ class GoBoard {
           this.captures = { ...move.capturesBefore };
           this.lastMove = move.previousLastMove ? { ...move.previousLastMove } : null;
           this.positionHistory.pop();
+          if (move.fogBefore) {
+            this.fogExplored = {
+              1: move.fogBefore[1].slice(),
+              2: move.fogBefore[2].slice()
+            };
+          }
           this.draw();
           return move;
         }
@@ -332,6 +356,10 @@ class GoBoard {
           this.lastMove = null;
           this.positionHistory = [this.positionKey()];
           this.captures = { 1: 0, 2: 0 };
+          this.fogExplored = {
+            1: new Uint8Array(this.size * this.size),
+            2: new Uint8Array(this.size * this.size)
+          };
           this.draw();
         }
 }

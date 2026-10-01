@@ -209,6 +209,10 @@ GoBoard.prototype.draw = function() {
           c.restore();
         }
 
+        // Туман рисуется последним, чтобы скрывать и камни, и подсказки,
+        // и влияние за пределами уже разведанной области.
+        this.drawFogOverlay(pad, step, cssSize);
+
         // Возвращаем настоящее игровое состояние после фантомной отрисовки.
         if (realStones) {
           this.stones = realStones;
@@ -216,7 +220,7 @@ GoBoard.prototype.draw = function() {
         }
       };
 
-GoBoard.prototype.drawCoordinates = function(pad, step, cssSize) {
+GoBoard.prototype.drawCoordinates = function(pad, step, cssSize, color = '#2d2116') {
         const c = this.ctx;
         const letters = [];
         for (let x = 0; x < this.size; x++) {
@@ -227,7 +231,7 @@ GoBoard.prototype.drawCoordinates = function(pad, step, cssSize) {
         const fontSize = 14;
         const outerInset = Math.max(fontSize * 0.62, 9);
         c.save();
-        c.fillStyle = '#2d2116';
+        c.fillStyle = color;
         c.font = `500 ${fontSize}px Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
         c.textAlign = 'center';
         c.textBaseline = 'middle';

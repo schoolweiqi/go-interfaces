@@ -1,5 +1,105 @@
 // Influence calculation and continuous-field rendering.
 
+
+GoBoard.prototype.setFogVisible = function(visible) {
+        this.showFog = Boolean(visible);
+        if (this.showFog) this.updateFogExploration();
+        this.draw();
+      };
+
+GoBoard.prototype.setFogViewerColor = function(color) {
+        const next = Number(color) === 2 ? 2 : 1;
+        if (this.fogViewerColor === next) return;
+        this.fogViewerColor = next;
+        if (this.showFog) this.draw();
+      };
+
+GoBoard.prototype.updateFogExploration = function() {
+        if (!this.fogExplored || this.fogExplored[1].length !== this.size * this.size) {
+          this.fogExplored = {
+            1: new Uint8Array(this.size * this.size),
+            2: new Uint8Array(this.size * this.size)
+          };
+        }
+
+        const heatmap = this.computeInfluenceHeatmap(false);
+        const epsilon = 1e-9;
+
+        for (let i = 0; i < heatmap.length; i++) {
+          const signed = (heatmap[i] - 0.5) * 2;
+          if (signed > epsilon) this.fogExplored[1][i] = 1;
+          if (signed < -epsilon) this.fogExplored[2][i] = 1;
+
+          // Собственный камень всегда считается разведанной точкой, даже если
+          // группа временно имеет слишком мало дыханий для поля влияния.
+          const stone = this.stones[i];
+          if (stone === 1 || stone === 2) this.fogExplored[stone][i] = 1;
+        }
+      };
+
+GoBoard.prototype.drawFogGuideGrid = function(pad, step, cssSize) {
+        const c = this.ctx;
+        c.save();
+        if (!this.showClean) {
+          c.strokeStyle = 'rgba(190,198,205,.18)';
+          c.lineWidth = 1;
+          for (let i = 0; i < this.size; i++) {
+            const p = pad + i * step;
+            c.beginPath(); c.moveTo(pad, p); c.lineTo(cssSize - pad, p); c.stroke();
+            c.beginPath(); c.moveTo(p, pad); c.lineTo(p, cssSize - pad); c.stroke();
+          }
+        }
+
+        c.fillStyle = 'rgba(205,212,218,.25)';
+        for (const [x, y] of this.starPoints()) {
+          c.beginPath();
+          c.arc(pad + x * step, pad + y * step, Math.max(1.7, step * 0.055), 0, Math.PI * 2);
+          c.fill();
+        }
+        c.restore();
+
+        // Координаты остаются доступны даже в неразведанной области: они не
+        // раскрывают позицию, но позволяют сделать первый ход.
+        this.drawCoordinates(pad, step, cssSize, 'rgba(205,212,218,.45)');
+      };
+
+GoBoard.prototype.drawFogOverlay = function(pad, step, cssSize) {
+        if (!this.showFog) return;
+
+        const explored = this.fogExplored && this.fogExplored[this.fogViewerColor];
+        if (!explored) return;
+
+        const fog = document.createElement('canvas');
+        fog.width = Math.max(1, Math.round(cssSize));
+        fog.height = Math.max(1, Math.round(cssSize));
+        const f = fog.getContext('2d');
+
+        f.fillStyle = 'rgba(8,10,12,.985)';
+        f.fillRect(0, 0, fog.width, fog.height);
+        f.globalCompositeOperation = 'destination-out';
+
+        const radius = step * 0.82;
+        for (let y = 0; y < this.size; y++) {
+          for (let x = 0; x < this.size; x++) {
+            if (!explored[this.index(x, y)]) continue;
+            const cx = pad + x * step;
+            const cy = pad + y * step;
+            const g = f.createRadialGradient(cx, cy, radius * 0.52, cx, cy, radius);
+            g.addColorStop(0, 'rgba(0,0,0,1)');
+            g.addColorStop(0.62, 'rgba(0,0,0,.96)');
+            g.addColorStop(1, 'rgba(0,0,0,0)');
+            f.fillStyle = g;
+            f.beginPath();
+            f.arc(cx, cy, radius, 0, Math.PI * 2);
+            f.fill();
+          }
+        }
+
+        f.globalCompositeOperation = 'source-over';
+        this.ctx.drawImage(fog, 0, 0, cssSize, cssSize);
+        this.drawFogGuideGrid(pad, step, cssSize);
+      };
+
 GoBoard.prototype.setInfluenceVisible = function(visible) {
         this.showInfluence = Boolean(visible);
         this.draw();
@@ -12,12 +112,14 @@ GoBoard.prototype.setInfluenceNumbersVisible = function(visible) {
 
 GoBoard.prototype.setInfluenceStrength = function(value) {
         this.influenceStrength = Math.max(1, Math.min(20, Math.round(Number(value) || 4)));
+        if (typeof this.updateFogExploration === 'function') this.updateFogExploration();
         this.draw();
       };
 
 GoBoard.prototype.setInfluenceThreeLibFactor = function(value) {
         const numeric = Number(value);
         this.influenceThreeLibFactor = Math.max(0, Math.min(1, Number.isFinite(numeric) ? numeric : 0.8));
+        if (typeof this.updateFogExploration === 'function') this.updateFogExploration();
         this.draw();
       };
 

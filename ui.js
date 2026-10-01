@@ -7,6 +7,7 @@
     const boardLinksBtn = document.getElementById('boardLinks');
     const boardInfluenceBtn = document.getElementById('boardInfluence');
     const boardPhantomBtn = document.getElementById('boardPhantom');
+    const boardFogBtn = document.getElementById('boardFog');
     const influenceStrengthInput = document.getElementById('influenceStrength');
     const influenceThreeLibFactorInput = document.getElementById('influenceThreeLibFactor');
     const influenceIntensityInput = document.getElementById('influenceIntensity');
@@ -36,6 +37,10 @@
     boardPhantomBtn.addEventListener('click', () => {
       board.setPhantomVisible(!board.showPhantom);
       boardPhantomBtn.classList.toggle('active', board.showPhantom);
+    });
+    boardFogBtn.addEventListener('click', () => {
+      board.setFogVisible(!board.showFog);
+      boardFogBtn.classList.toggle('active', board.showFog);
     });
     settingsToggle.addEventListener('click', () => {
       const opening = settingsBody.hidden;
@@ -156,6 +161,14 @@
       moveNumber.textContent = String(currentMoveNumber());
     }
 
+    function currentFogViewerColor() {
+      if (gameMode === 'bot' && botGame.active) return botGame.humanColor;
+      if (gameMode === 'network' && networkGame.active && (networkGame.color === 1 || networkGame.color === 2)) {
+        return networkGame.color;
+      }
+      return turn;
+    }
+
     function updateTurn() {
       turnText.textContent = turn === 1 ? 'Ход чёрных' : 'Ход белых';
       turnStone.classList.toggle('white', turn === 2);
@@ -163,6 +176,7 @@
       // Фантом всегда показывает предполагаемый ход той стороны,
       // которой принадлежит текущая очередь хода.
       board.setPhantomColor(turn);
+      board.setFogViewerColor(currentFogViewerColor());
 
       updateMoveNumber();
     }
@@ -201,6 +215,7 @@
 
       for (const [x, y] of meta.setupBlack) board.setStone(x, y, 1);
       for (const [x, y] of meta.setupWhite) board.setStone(x, y, 2);
+      board.updateFogExploration();
 
       board.history = [];
       board.lastMove = null;
