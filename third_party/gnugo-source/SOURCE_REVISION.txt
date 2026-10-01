@@ -7,3 +7,7 @@ The School of Go interface is a separate project component.
 GNU Go is used as an independent game engine through gnugo-worker.js.
 
 For a future custom build, keep all project-specific GNU Go changes and build instructions in this directory.
+
+PROJECT_MODIFICATION=Selectable GNU Go levels 0-10 via play_level(seed, level, sgf)
+PATCH=play-level.patch
+BUILD_SCRIPT=build-wasm.sh
