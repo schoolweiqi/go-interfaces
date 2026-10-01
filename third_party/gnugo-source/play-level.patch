@@ -1,0 +1,62 @@
+diff --git a/interface/main.c b/interface/main.c
+index 9f8958a..customlevel 100644
+--- a/interface/main.c
++++ b/interface/main.c
+@@ -52,6 +52,7 @@
+ #include "interface.h"
+ #include "sgftree.h"
+ #include "random.h"
++#include "clock.h"
+ 
+ static void show_copyright(void);
+ static void show_version(void);
+@@ -237,6 +238,7 @@ static struct gg_option const long_options[] =
+ };
+ 
+ char *play(int seed, char *board);
++char *play_level(int seed, int level, char *board);
+ int
+ main(int argc, char *argv[])
+ {
+@@ -1284,12 +1286,19 @@ char *get_version(void)
+   return VERSION;
+ }
+ 
+-char *play(int seed, char *board)
++static char *
++play_with_level(int seed, int level, char *board)
+ {
+   Gameinfo gameinfo;
+   SGFTree sgftree;
+ 
+   sgftree_clear(&sgftree);
+   gameinfo_clear(&gameinfo);
+ 
+   init_gnugo(DEFAULT_MEMORY, seed);
++
++  if (level < 0)
++    level = 0;
++  if (level > 10)
++    level = 10;
++  set_level(level);
+ 
+   // We cheat fileread by providing the raw file content
+   setsgffile(board);
+@@ -1310,6 +1319,18 @@ char *play(int seed, char *board)
+   return get_sgf_content();
+ }
+ 
++char *
++play(int seed, char *board)
++{
++  return play_with_level(seed, DEFAULT_LEVEL, board);
++}
++
++char *
++play_level(int seed, int level, char *board)
++{
++  return play_with_level(seed, level, board);
++}
++
+ float score(int seed, char *board)
+ {
