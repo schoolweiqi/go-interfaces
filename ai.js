@@ -148,6 +148,9 @@
         const moveResponse = await botEngine.generateMove(buildBotSgf(), 0, botGame.level);
         const outputSgf = moveResponse.sgf;
         botGame.levelApplied = moveResponse.levelApplied === true;
+        botGame.appliedLevel = Number.isFinite(Number(moveResponse.appliedLevel))
+          ? Number(moveResponse.appliedLevel)
+          : 10;
         const last = getLastSgfMove(outputSgf);
         if (!last) throw new Error('GNU Go не вернул ход');
         if (last.color !== botGame.botColor) throw new Error('GNU Go вернул ход не того цвета');
@@ -167,7 +170,9 @@
         }
         turn = botGame.humanColor;
         updateTurn();
-        botStatus.textContent = `Ваш ход (${colorName(botGame.humanColor)}). Уровень: ${botGame.level}${botGame.levelApplied ? '' : ' (web-сборка использует 10)'}.`;
+        botStatus.textContent = botGame.levelApplied
+          ? `Ваш ход (${colorName(botGame.humanColor)}). GNU Go реально играет на уровне ${botGame.appliedLevel}.`
+          : `Ваш ход (${colorName(botGame.humanColor)}). Запрошен уровень ${botGame.level}, фактически ${botGame.appliedLevel}.`;
       } catch (error) {
         botStatus.textContent = `Ошибка GNU Go: ${error.message}`;
         gameMsg.textContent = `Ошибка GNU Go: ${error.message}`;
@@ -189,6 +194,7 @@
       if (!Number.isFinite(botGame.komi)) botGame.komi = 6.5;
       botGame.level = Math.max(0, Math.min(10, Number(botLevelSelect.value) || 0));
       botGame.levelApplied = false;
+      botGame.appliedLevel = 10;
       board.setSize(Number(botSizeSelect.value));
       turn = 1;
       updateTurn();
