@@ -72,6 +72,7 @@ const ogsGame = {
   acceptedByMe: false,
   awaitingMove: false,
   clock: null,
+  timeControl: null,
   score: null,
   winner: null,
   outcome: "",
@@ -134,43 +135,191 @@ function formatClockMs(milliseconds) {
   let ms = Number(milliseconds);
   if (!Number.isFinite(ms)) return "—";
   ms = Math.max(0, ms);
-  const totalSeconds = Math.ceil(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
+
+  // Match OGS's display convention: ceil the running second so 9.2 s
+  // is shown as 0:10 rather than 0:09.
+  let totalSeconds = Math.ceil((ms - 1) / 1000);
+  if (ms <= 0) totalSeconds = 0;
+
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return hours + ":" + String(minutes).padStart(2, "0") + ":" + String(seconds).padStart(2, "0");
+  }
   return minutes + ":" + String(seconds).padStart(2, "0");
 }
 
+function rawOgsThinkingTimeMs(value) {
+  if (typeof value === "number") {
+    // Simple time is the exception in the OGS wire format: numeric clock
+    // values are already milliseconds.
+    return Math.max(0, value);
+  }
+  if (!value || typeof value !== "object") return 0;
+  const seconds = Number(value.thinking_time);
+  return Number.isFinite(seconds) ? Math.max(0, seconds * 1000) : 0;
+}
+
+function ogsClockElapsedMs(clock) {
+  if (!clock || clock.start_mode) return 0;
+
+  const lastMove = Number(clock.last_move);
+  if (!Number.isFinite(lastMove) || lastMove <= 0) return 0;
+
+  let effectiveNow = Date.now();
+
+  // If OGS supplied its current server timestamp, use it to compensate for
+  // a client computer whose wall clock is slightly off.
+  const serverNow = Number(clock.now);
+  if (Number.isFinite(serverNow) && serverNow > 0) {
+    const receivedAgo = Math.max(0, Date.now() - Number(clock._received_at || Date.now()));
+    effectiveNow = serverNow + receivedAgo;
+  }
+
+  if (clock.pause && clock.pause.paused) {
+    const pausedSince = Number(clock.pause.paused_since || clock.paused_since);
+    if (Number.isFinite(pausedSince) && pausedSince > 0) {
+      effectiveNow = Math.max(lastMove, pausedSince);
+    }
+  }
+
+  return Math.max(0, effectiveNow - lastMove);
+}
+
+function computeOgsPlayerClock(rawValue, isCurrentPlayer, elapsedMs, timeControl) {
+  const tc = timeControl || {};
+  const system = String(tc.system || "byoyomi");
+
+  if (typeof rawValue === "number") {
+    return {
+      main_time: isCurrentPlayer ? Math.max(0, rawValue - elapsedMs) : Math.max(0, rawValue)
+    };
+  }
+
+  const raw = rawValue && typeof rawValue === "object" ? rawValue : {};
+  const baseMainMs = rawOgsThinkingTimeMs(raw);
+
+  if (system === "byoyomi") {
+    let mainTime = baseMainMs;
+    let overtimeUsage = 0;
+
+    if (isCurrentPlayer) {
+      mainTime = baseMainMs - elapsedMs;
+      if (mainTime <= 0) {
+        overtimeUsage = -mainTime;
+        mainTime = 0;
+      }
+    }
+
+    let periodsLeft = Number(raw.periods);
+    if (!Number.isFinite(periodsLeft)) periodsLeft = Number(tc.periods);
+    if (!Number.isFinite(periodsLeft)) periodsLeft = 0;
+
+    const periodSeconds = Number(tc.period_time ?? raw.period_time);
+    const periodMs = Number.isFinite(periodSeconds) ? Math.max(0, periodSeconds * 1000) : 0;
+    let periodTimeLeft = periodMs;
+
+    if (isCurrentPlayer && overtimeUsage > 0 && periodMs > 0) {
+      const periodsUsed = Math.floor(overtimeUsage / periodMs);
+      periodsLeft -= periodsUsed;
+      periodTimeLeft = periodMs - (overtimeUsage - periodsUsed * periodMs);
+    }
+
+    return {
+      main_time: Math.max(0, mainTime),
+      periods_left: Math.max(0, periodsLeft),
+      period_time_left: Math.max(0, periodTimeLeft)
+    };
+  }
+
+  if (system === "canadian") {
+    let mainTime = baseMainMs;
+    let overtimeUsage = 0;
+
+    if (isCurrentPlayer) {
+      mainTime = baseMainMs - elapsedMs;
+      if (mainTime <= 0) {
+        overtimeUsage = -mainTime;
+        mainTime = 0;
+      }
+    }
+
+    let blockTime = Number(raw.block_time);
+    blockTime = Number.isFinite(blockTime) ? blockTime * 1000 : 0;
+    if (isCurrentPlayer && overtimeUsage > 0) {
+      blockTime = Math.max(0, blockTime - overtimeUsage);
+    }
+
+    return {
+      main_time: Math.max(0, mainTime),
+      moves_left: Number(raw.moves_left) || 0,
+      block_time_left: Math.max(0, blockTime)
+    };
+  }
+
+  // Absolute and Fischer use thinking_time in seconds on the wire.
+  return {
+    main_time: isCurrentPlayer ? Math.max(0, baseMainMs - elapsedMs) : baseMainMs
+  };
+}
+
+function currentOgsDisplayClock() {
+  const clock = ogsGame.clock;
+  if (!clock) return null;
+
+  const activeColor = ogsCurrentPlayerColorFromClock(clock);
+  const elapsed = ogsClockElapsedMs(clock);
+  const tc = ogsGame.timeControl || {};
+
+  return {
+    activeColor,
+    black: computeOgsPlayerClock(clock.black_time, activeColor === 1 && !clock.start_mode, elapsed, tc),
+    white: computeOgsPlayerClock(clock.white_time, activeColor === 2 && !clock.start_mode, elapsed, tc)
+  };
+}
+
 function formatClockPart(value) {
-  if (typeof value === "number") return formatClockMs(value);
   if (!value || typeof value !== "object") return "—";
 
-  const thinking = Number(value.thinking_time);
-  if (Number.isFinite(thinking) && thinking > 0) return formatClockMs(thinking);
+  const main = Number(value.main_time);
+  if (Number.isFinite(main) && main > 0) {
+    return formatClockMs(main);
+  }
 
-  const periodLeft = Number(
-    value.period_time_left !== undefined ? value.period_time_left :
-    value.period_time !== undefined ? value.period_time :
-    value.block_time !== undefined ? value.block_time : NaN
-  );
-  const periods = Number(value.periods);
-  const suffix = Number.isFinite(periods) ? " · " + periods + " бёёми" : "";
-  if (Number.isFinite(periodLeft)) return formatClockMs(periodLeft) + suffix;
+  if (Number.isFinite(Number(value.period_time_left))) {
+    const periods = Math.max(0, Number(value.periods_left) || 0);
+    return formatClockMs(value.period_time_left) + " · " + periods + " бёёми";
+  }
 
+  if (Number.isFinite(Number(value.block_time_left))) {
+    const moves = Math.max(0, Number(value.moves_left) || 0);
+    return formatClockMs(value.block_time_left) + " / " + moves;
+  }
+
+  if (Number.isFinite(main)) return formatClockMs(main);
   return "—";
 }
 
 function renderOgsClock() {
   if (!ogsClock) return;
-  const clock = ogsGame.clock;
-  if (!ogsGame.active || ogsGame.phase !== "play" || !clock) {
+  if (!ogsGame.active || ogsGame.phase !== "play" || !ogsGame.clock) {
     ogsClock.hidden = true;
     return;
   }
-  const black = formatClockPart(clock.black_time);
-  const white = formatClockPart(clock.white_time);
-  const activeColor = ogsCurrentPlayerColorFromClock(clock);
-  const markerBlack = activeColor === 1 ? "▶ " : "";
-  const markerWhite = activeColor === 2 ? "▶ " : "";
+
+  const display = currentOgsDisplayClock();
+  if (!display) {
+    ogsClock.hidden = true;
+    return;
+  }
+
+  const black = formatClockPart(display.black);
+  const white = formatClockPart(display.white);
+  const markerBlack = display.activeColor === 1 ? "▶ " : "";
+  const markerWhite = display.activeColor === 2 ? "▶ " : "";
+
   ogsClock.textContent = markerBlack + "● " + black + "   " + markerWhite + "○ " + white;
   ogsClock.hidden = false;
 }
@@ -665,6 +814,7 @@ function resetOgsGameState() {
   ogsGame.acceptedByMe = false;
   ogsGame.awaitingMove = false;
   ogsGame.clock = null;
+  ogsGame.timeControl = null;
   ogsGame.score = null;
   ogsGame.winner = null;
   ogsGame.outcome = "";
@@ -920,7 +1070,10 @@ function applyOgsGamedata(data) {
   ogsGame.score = data.score || null;
   ogsGame.winner = data.winner !== undefined ? data.winner : null;
   ogsGame.outcome = data.outcome || "";
-  ogsGame.clock = data.clock || ogsGame.clock;
+  ogsGame.clock = data.clock
+    ? { ...data.clock, _received_at: Date.now() }
+    : ogsGame.clock;
+  ogsGame.timeControl = data.time_control || ogsGame.timeControl;
   ogsGame.awaitingMove = false;
 
   sessionStorage.setItem("ogs_active_game_id", String(gameId));
@@ -1244,7 +1397,7 @@ function handleOgsGameEvent(type, data) {
   } else if (eventName === "move") {
     applyOgsMoveEvent(data);
   } else if (eventName === "clock") {
-    ogsGame.clock = data || null;
+    ogsGame.clock = data ? { ...data, _received_at: Date.now() } : null;
     const clockTurn = ogsCurrentPlayerColorFromClock(data);
     if (clockTurn && ogsGame.phase === "play") {
       turn = clockTurn;
