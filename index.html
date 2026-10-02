@@ -63,7 +63,29 @@
 
         <section class="panel ogs">
           <h2>ОГС</h2>
-          <div class="msg ogsDisconnected">ОГС не подключен</div>
+          <div class="ogsPreset">19 × 19 · Japanese · Live · byo-yomi</div>
+
+          <div class="row ogsAuthActions">
+            <button id="login" type="button">Подключиться к OGS</button>
+            <button id="logout" class="secondary" type="button" hidden>Отключиться</button>
+          </div>
+          <div id="authMsg" class="msg">Не подключено к OGS.</div>
+
+          <button id="findOpponent" type="button" disabled>Найти партию</button>
+          <button id="cancelSearch" class="secondary" type="button" hidden>Отменить поиск</button>
+
+          <div id="ogsStatus" class="ogsStatus">Подключитесь к OGS, чтобы искать партии.</div>
+          <div id="ogsGameInfo" class="ogsGameInfo" hidden></div>
+          <div id="ogsClock" class="ogsClock" hidden></div>
+
+          <div id="ogsStoneRemoval" class="ogsStoneRemoval" hidden>
+            <div>Нажимайте на мёртвые группы на доске. Красный крест означает камни, предложенные к удалению.</div>
+            <button id="ogsAcceptScore" type="button">Подтвердить мёртвые камни</button>
+            <button id="ogsResumePlay" class="secondary" type="button">Продолжить игру</button>
+          </div>
+
+          <button id="ogsResign" class="secondary ogsDanger" type="button" hidden>Сдаться</button>
+          <div id="ogsResult" class="ogsResult" hidden></div>
         </section>
 
         <section class="panel network">
@@ -86,10 +108,9 @@
         </section>
 
         <div hidden aria-hidden="true">
-          <button id="login"></button><button id="logout"></button><div id="authMsg"></div>
           <select id="size"><option value="19">19</option><option value="13">13</option><option value="9">9</option></select>
           <select id="speed"><option value="live">Live</option></select>
-          <button id="findOpponent"></button><button id="cancelSearch"></button><button id="newGame"></button>
+          <button id="newGame"></button>
         </div>
 
         <section class="panel bot">
