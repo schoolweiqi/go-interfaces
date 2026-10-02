@@ -30,6 +30,7 @@ const authMsg = document.getElementById("authMsg");
 const loginButton = document.getElementById("login");
 const logoutButton = document.getElementById("logout");
 const findButton = document.getElementById("findOpponent");
+const ogsBotButton = document.getElementById("challengeOgsBot");
 const cancelButton = document.getElementById("cancelSearch");
 const ogsStatus = document.getElementById("ogsStatus");
 const ogsGameInfo = document.getElementById("ogsGameInfo");
@@ -47,6 +48,15 @@ let lastOgsConfig = null;
 let ogsCurrentUser = null;
 let ogsReconnectTimer = null;
 let ogsReconnectAttempt = 0;
+let ogsActiveBots = {};
+
+const ogsBotChallenge = {
+  active: false,
+  challengeId: null,
+  gameId: null,
+  keepaliveTimer: null,
+  bot: null
+};
 
 const ogsGame = {
   active: false,
@@ -226,10 +236,267 @@ function renderOgsResult() {
   ogsResult.hidden = false;
 }
 
+
+function getConfiguredOgsBot() {
+  const id = Number(OGS.botPlayerId);
+  if (!Number.isFinite(id)) return null;
+  return ogsActiveBots[id] || ogsActiveBots[String(id)] || null;
+}
+
+function clampToRange(value, range) {
+  if (!Array.isArray(range) || range.length < 2) return value;
+  const min = Number(range[0]);
+  const max = Number(range[1]);
+  if (!Number.isFinite(min) || !Number.isFinite(max)) return value;
+  return Math.max(min, Math.min(max, value));
+}
+
+function ogsRankNumber(rank) {
+  const text = String(rank || "").trim().toLowerCase();
+  const n = parseInt(text, 10);
+  if (!Number.isFinite(n)) return null;
+  if (text.endsWith("p")) return n + 45;
+  if (text.endsWith("d")) return n + 30;
+  return 30 - n;
+}
+
+function botAllowsBoardSize(config, size) {
+  if (!config || config._config_version === 0) return true;
+  const allowed = config.allowed_board_sizes;
+  if (allowed === "all" || allowed === "square") return true;
+  if (typeof allowed === "number") return allowed === size;
+  if (Array.isArray(allowed)) return allowed.includes(0) || allowed.includes(size);
+  return false;
+}
+
+function buildOgsBotChallenge(bot) {
+  if (!bot) throw new Error("Выбранный OGS-бот сейчас не подключён");
+  const config = bot.config || { _config_version: 0 };
+
+  if (config.decline_new_challenges) {
+    throw new Error("Бот сейчас не принимает новые вызовы");
+  }
+  if (!botAllowsBoardSize(config, 19)) {
+    throw new Error("Бот не принимает партии 19×19");
+  }
+
+  if (
+    config._config_version > 0 &&
+    Array.isArray(config.allowed_time_control_systems) &&
+    !config.allowed_time_control_systems.includes("byoyomi")
+  ) {
+    throw new Error("Бот не поддерживает byo-yomi");
+  }
+
+  const live = config._config_version > 0 ? config.allowed_live_settings : null;
+  if (config._config_version > 0 && (!live || !live.byoyomi)) {
+    throw new Error("Бот не принимает Live-партии с byo-yomi");
+  }
+
+  if (config._config_version > 0 && Array.isArray(config.allowed_rank_range)) {
+    const userRank = Number(ogsCurrentUser && ogsCurrentUser.ranking);
+    const minRank = ogsRankNumber(config.allowed_rank_range[0]);
+    const maxRank = ogsRankNumber(config.allowed_rank_range[1]);
+    if (
+      Number.isFinite(userRank) &&
+      Number.isFinite(minRank) &&
+      Number.isFinite(maxRank) &&
+      (userRank < minRank || userRank > maxRank)
+    ) {
+      throw new Error(
+        "Бот принимает игроков только в диапазоне " +
+        config.allowed_rank_range[0] + " — " + config.allowed_rank_range[1]
+      );
+    }
+  }
+
+  const byoyomi = live && live.byoyomi ? live.byoyomi : null;
+  const mainTime = clampToRange(600, byoyomi && byoyomi.main_time_range);
+  const periodTime = clampToRange(30, byoyomi && byoyomi.period_time_range);
+  const periods = Math.round(clampToRange(5, byoyomi && byoyomi.periods_range));
+
+  let ranked = false;
+  if (config._config_version > 0) {
+    if (config.allow_unranked) ranked = false;
+    else if (config.allow_ranked) ranked = true;
+    else throw new Error("Бот сейчас не принимает доступный тип партии");
+  }
+
+  const timeControl = {
+    system: "byoyomi",
+    speed: "live",
+    main_time: mainTime,
+    period_time: periodTime,
+    periods,
+    pause_on_weekends: false,
+    time_control: "byoyomi"
+  };
+
+  return {
+    initialized: false,
+    challenger_color: "automatic",
+    invite_only: false,
+    min_ranking: -1000,
+    max_ranking: 1000,
+    rengo_auto_start: 0,
+    game: {
+      name: "Friendly Match",
+      rules: "japanese",
+      ranked,
+      width: 19,
+      height: 19,
+      handicap: 0,
+      komi_auto: "automatic",
+      disable_analysis: false,
+      initial_state: null,
+      private: false,
+      time_control: "byoyomi",
+      time_control_parameters: timeControl,
+      pause_on_weekends: false,
+      rengo: false,
+      rengo_casual_mode: true
+    }
+  };
+}
+
+function clearOgsBotChallenge({ disconnect = true } = {}) {
+  if (ogsBotChallenge.keepaliveTimer) {
+    clearInterval(ogsBotChallenge.keepaliveTimer);
+    ogsBotChallenge.keepaliveTimer = null;
+  }
+
+  if (disconnect && ogsBotChallenge.gameId && ogsSocketReady) {
+    try {
+      wsSend("game/disconnect", { game_id: Number(ogsBotChallenge.gameId) });
+    } catch (_) {}
+  }
+
+  ogsBotChallenge.active = false;
+  ogsBotChallenge.challengeId = null;
+  ogsBotChallenge.gameId = null;
+  ogsBotChallenge.bot = null;
+}
+
+async function startOgsBotChallenge() {
+  const token = sessionStorage.getItem("ogs_access_token");
+  if (!token || !ogsCurrentUser) {
+    setOgsStatus("Сначала подключитесь к OGS.");
+    return;
+  }
+  if (!ogsSocketReady) {
+    setOgsStatus("Игровое соединение OGS ещё не готово.");
+    return;
+  }
+  if (activeAutomatchUuid) {
+    setOgsStatus("Сначала отмените обычный поиск партии.");
+    return;
+  }
+  if (ogsBotChallenge.active) return;
+  if (ogsGame.active && ogsGame.phase !== "finished") {
+    setOgsStatus("Сначала завершите текущую OGS-партию.");
+    return;
+  }
+
+  const bot = getConfiguredOgsBot();
+  if (!bot) {
+    setOgsStatus("Бот OGS #" + OGS.botPlayerId + " сейчас офлайн.");
+    refreshOgsControls();
+    return;
+  }
+
+  let challenge;
+  try {
+    challenge = buildOgsBotChallenge(bot);
+  } catch (error) {
+    setOgsStatus("Нельзя вызвать бота: " + error.message);
+    refreshOgsControls();
+    return;
+  }
+
+  if (typeof botGame !== "undefined" && botGame.active && typeof stopBotGame === "function") {
+    stopBotGame();
+  }
+  if (typeof networkGame !== "undefined" && networkGame.active && typeof leaveNetworkGame === "function") {
+    leaveNetworkGame();
+  }
+  if (ogsGame.active && ogsGame.phase === "finished") disconnectOgsGame(false);
+
+  ogsBotChallenge.active = true;
+  ogsBotChallenge.bot = bot;
+  setOgsStatus("Вызываю " + (bot.username || ("бота #" + OGS.botPlayerId)) + "…");
+  refreshOgsControls();
+
+  try {
+    const response = await fetch(
+      OGS.apiUrl + "players/" + Number(OGS.botPlayerId) + "/challenge",
+      {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer " + token,
+          Accept: "application/json",
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(challenge)
+      }
+    );
+
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const message =
+        result.detail ||
+        result.message ||
+        result.error ||
+        ("HTTP " + response.status);
+      throw new Error(typeof message === "string" ? message : JSON.stringify(message));
+    }
+
+    const gameId = Number(
+      typeof result.game === "object" && result.game
+        ? result.game.id
+        : result.game
+    );
+    const challengeId = Number(result.challenge);
+
+    if (!Number.isFinite(gameId) || gameId <= 0) {
+      throw new Error("OGS не вернул game_id для вызова");
+    }
+
+    ogsBotChallenge.gameId = gameId;
+    ogsBotChallenge.challengeId = Number.isFinite(challengeId) ? challengeId : null;
+
+    // OGS official client keeps a live direct challenge alive once a second
+    // and connects to the provisional game immediately. Gamedata means the
+    // challenge has been accepted and the real game has started.
+    if (ogsBotChallenge.challengeId) {
+      ogsBotChallenge.keepaliveTimer = setInterval(() => {
+        if (!ogsBotChallenge.active || !ogsSocketReady) return;
+        try {
+          wsSend("challenge/keepalive", {
+            challenge_id: Number(ogsBotChallenge.challengeId),
+            game_id: Number(ogsBotChallenge.gameId)
+          });
+        } catch (_) {}
+      }, 1000);
+    }
+
+    wsSend("game/connect", { game_id: gameId, chat: false });
+    setOgsStatus(
+      "Вызов отправлен " + (bot.username || ("боту #" + OGS.botPlayerId)) +
+      ". Ожидаю принятия…"
+    );
+    refreshOgsControls();
+  } catch (error) {
+    clearOgsBotChallenge();
+    setOgsStatus("Не удалось вызвать бота: " + error.message);
+    refreshOgsControls();
+  }
+}
+
 function refreshOgsControls() {
   const token = sessionStorage.getItem("ogs_access_token");
   const loggedIn = Boolean(token && ogsCurrentUser);
   const searching = Boolean(activeAutomatchUuid);
+  const pendingBotChallenge = Boolean(ogsBotChallenge.active);
   const activeLiveGame = Boolean(ogsGame.active && ogsGame.phase && ogsGame.phase !== "finished");
 
   loginButton.hidden = loggedIn;
@@ -237,8 +504,23 @@ function refreshOgsControls() {
 
   findButton.hidden = searching;
   cancelButton.hidden = !searching;
-  findButton.disabled = !loggedIn || !ogsSocketReady || activeLiveGame;
+  findButton.disabled = !loggedIn || !ogsSocketReady || activeLiveGame || pendingBotChallenge;
   cancelButton.disabled = !ogsSocketReady;
+
+  if (ogsBotButton) {
+    const selectedBot = getConfiguredOgsBot();
+    ogsBotButton.disabled =
+      !loggedIn ||
+      !ogsSocketReady ||
+      searching ||
+      activeLiveGame ||
+      pendingBotChallenge ||
+      !selectedBot;
+    ogsBotButton.textContent = pendingBotChallenge ? "Бот…" : "Бот";
+    ogsBotButton.title = selectedBot
+      ? "Вызвать " + (selectedBot.username || ("OGS-бота #" + OGS.botPlayerId))
+      : "OGS-бот #" + OGS.botPlayerId + " сейчас офлайн";
+  }
 
   if (ogsResignButton) {
     ogsResignButton.hidden = !(ogsGame.active && ogsGame.phase === "play");
@@ -267,7 +549,7 @@ function refreshOgsControls() {
     if (undoButton) undoButton.disabled = true;
   }
 
-  const blockOtherGames = searching || activeLiveGame;
+  const blockOtherGames = searching || pendingBotChallenge || activeLiveGame;
   const botButton = document.getElementById("startBotGame");
   const networkButton = document.getElementById("createNetworkGame");
   const sgfLoadButton = document.getElementById("loadSgf");
@@ -1090,6 +1372,44 @@ function handleOgsSocketMessage(event) {
   const data = packet[1] || {};
   if (typeof type !== "string") return;
 
+  if (type === "active-bots") {
+    ogsActiveBots = data && typeof data === "object" ? data : {};
+    refreshOgsControls();
+    return;
+  }
+
+  if (
+    ogsBotChallenge.active &&
+    ogsBotChallenge.gameId &&
+    type === "game/" + ogsBotChallenge.gameId + "/gamedata"
+  ) {
+    const acceptedGameId = Number(ogsBotChallenge.gameId);
+    clearOgsBotChallenge({ disconnect: false });
+    ogsGame.active = true;
+    ogsGame.gameId = acceptedGameId;
+    sessionStorage.setItem("ogs_active_game_id", String(acceptedGameId));
+    setOgsStatus("Бот принял вызов. Партия начинается.");
+    applyOgsGamedata(data);
+    return;
+  }
+
+  if (
+    type === "notification" &&
+    ogsBotChallenge.active &&
+    data &&
+    data.type === "gameOfferRejected" &&
+    Number(data.game_id) === Number(ogsBotChallenge.gameId)
+  ) {
+    const rejection =
+      data.message ||
+      (data.rejection_details && data.rejection_details.message) ||
+      "бот отклонил вызов";
+    clearOgsBotChallenge();
+    setOgsStatus("Вызов боту отклонён: " + rejection);
+    refreshOgsControls();
+    return;
+  }
+
   if (type === "automatch/entry") {
     activeAutomatchUuid = data.uuid || activeAutomatchUuid;
     setSearchState(true, "OGS ищет подходящего соперника…");
@@ -1224,6 +1544,7 @@ async function handleOgsCallback() {
 
 function logoutOgs() {
   activeAutomatchUuid = null;
+  clearOgsBotChallenge();
   clearOgsReconnect();
 
   if (ogsGame.active) disconnectOgsGame(true);
@@ -1250,6 +1571,13 @@ loginButton.addEventListener("click", () => {
   });
 });
 logoutButton.addEventListener("click", logoutOgs);
+ogsBotButton.addEventListener("click", () => {
+  startOgsBotChallenge().catch((error) => {
+    clearOgsBotChallenge();
+    setOgsStatus("Не удалось вызвать бота: " + error.message);
+    refreshOgsControls();
+  });
+});
 ogsAcceptScoreButton.addEventListener("click", acceptOgsRemovedStones);
 ogsResumePlayButton.addEventListener("click", resumeOgsPlay);
 ogsResignButton.addEventListener("click", resignOgsGame);
