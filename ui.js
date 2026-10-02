@@ -106,7 +106,7 @@
     const botStatus = document.getElementById('botStatus');
     const botScore = document.getElementById('botScore');
 
-    let gameMode = 'local'; // local | bot | network
+    let gameMode = 'local'; // local | bot | network | ogs
     const botGame = {
       active: false,
       ended: false,
@@ -149,6 +149,9 @@
       // В партии с GNU Go история пока остаётся линейной.
       if (gameMode === 'bot') return board.history.length;
 
+      // Для OGS номер приходит из подтверждённой сервером последовательности.
+      if (gameMode === 'ogs') return Number(ogsGame.moveNumber || board.history.length || 0);
+
       // Сетевой сервер может прислать готовый счётчик. Если в старом состоянии
       // его нет, показываем доступную длину массива ходов либо 0.
       const state = networkGame.lastState || {};
@@ -163,6 +166,7 @@
 
     function currentFogViewerColor() {
       if (gameMode === 'bot' && botGame.active) return botGame.humanColor;
+      if (gameMode === 'ogs' && ogsGame.active && (ogsGame.color === 1 || ogsGame.color === 2)) return ogsGame.color;
       if (gameMode === 'network' && networkGame.active && (networkGame.color === 1 || networkGame.color === 2)) {
         return networkGame.color;
       }
@@ -263,6 +267,11 @@
     board.onIntersection = async (x, y) => {
       board.phantomHover = null;
 
+      if (gameMode === 'ogs') {
+        handleOgsBoardClick(x, y);
+        return;
+      }
+
       if (gameMode === 'network') {
         const state = networkGame.lastState;
         if (!networkGame.active || !state || state.status !== 'playing') return;
@@ -333,6 +342,10 @@
 
 
     document.getElementById('pass').addEventListener('click', async () => {
+      if (gameMode === 'ogs') {
+        submitOgsPass();
+        return;
+      }
       if (gameMode === 'network') {
         const state = networkGame.lastState;
         if (!networkGame.active || !state || state.status !== 'playing') return;
@@ -361,6 +374,10 @@
     });
 
     document.getElementById('undo').addEventListener('click', () => {
+      if (gameMode === 'ogs') {
+        gameMsg.textContent = 'Отмена хода в OGS-партии пока отключена.';
+        return;
+      }
       if (gameMode === 'network') {
         networkStatus.textContent = 'Отмена хода в сетевой партии отключена.';
         return;
