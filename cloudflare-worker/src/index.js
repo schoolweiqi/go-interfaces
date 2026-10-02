@@ -457,12 +457,7 @@ export class GameRoom extends DurableObject {
       if (state.items.length > 5000) state.items = state.items.slice(-5000);
     } else if (data.type === "review-undo") {
       state.items = Array.isArray(state.items) ? state.items : [];
-      for (let i = state.items.length - 1; i >= 0; i--) {
-        if (Number(state.items[i]?.authorIndex) === authorIndex) {
-          state.items.splice(i, 1);
-          break;
-        }
-      }
+      state.items.pop();
     } else if (data.type === "review-board") {
       if (authorIndex !== 0) return this.sendError(ws, "Позицию может менять только ведущий разбора");
       const boardState = this.sanitizeReviewBoardState(state, data.boardState);
