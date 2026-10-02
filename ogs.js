@@ -57,6 +57,7 @@ const ogsGame = {
   players: { black: null, white: null },
   moves: [],
   moveNumber: 0,
+  nextMoveColor: 1,
   removed: new Set(),
   acceptedByMe: false,
   awaitingMove: false,
@@ -449,6 +450,7 @@ function resetOgsGameState() {
   ogsGame.players = { black: null, white: null };
   ogsGame.moves = [];
   ogsGame.moveNumber = 0;
+  ogsGame.nextMoveColor = 1;
   ogsGame.removed = new Set();
   ogsGame.acceptedByMe = false;
   ogsGame.awaitingMove = false;
@@ -742,6 +744,7 @@ function applyOgsGamedata(data) {
 
   ogsGame.moves = moves.slice();
   ogsGame.moveNumber = moves.length;
+  ogsGame.nextMoveColor = nextColor;
   turn = nextColor;
 
   const clockTurn = ogsCurrentPlayerColorFromClock(ogsGame.clock);
@@ -796,7 +799,18 @@ function applyOgsMoveEvent(data) {
     return;
   }
 
-  const color = turn;
+  // Do not use the UI turn indicator to color an incoming stone.
+  // A clock event for the next player can arrive before the move event itself.
+  // The authoritative move sequence is the stable source for the stone color.
+  const color = move.color === 1 || move.color === 2
+    ? move.color
+    : ogsGame.nextMoveColor;
+
+  if (color !== 1 && color !== 2) {
+    resyncOgsGame("Не удалось определить цвет хода OGS. Синхронизирую позицию…");
+    return;
+  }
+
   if (!applyAuthoritativeOgsMove(move, color, false)) {
     resyncOgsGame("Локальная позиция разошлась с OGS. Загружаю состояние сервера…");
     return;
@@ -807,7 +821,11 @@ function applyOgsMoveEvent(data) {
     ? serverMoveNumber
     : ogsGame.moveNumber + 1;
   ogsGame.awaitingMove = false;
-  turn = color === 1 ? 2 : 1;
+  ogsGame.nextMoveColor = color === 1 ? 2 : 1;
+
+  // The move sequence determines who should play next. A later clock event
+  // may confirm the same value and update the visible timer.
+  turn = ogsGame.nextMoveColor;
 
   board.draw();
   updateTurn();
