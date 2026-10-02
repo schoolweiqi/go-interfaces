@@ -244,7 +244,11 @@
     updateTurn();
     updateCaptures();
     requestAnimationFrame(() => board.draw());
-    // OGS временно скрыт и не подключается автоматически.
-    // Верхней статусной полосы больше нет; состояние остаётся внутри OGS-блока.
+    // Восстанавливаем OAuth/OGS-сессию после загрузки всех игровых модулей.
+    handleOgsCallback().catch(error => {
+      const status = document.getElementById('ogsStatus');
+      if (status) status.textContent = 'Ошибка запуска OGS: ' + error.message;
+    });
+
     const initialRoomId = new URL(location.href).searchParams.get('room');
     if (initialRoomId) joinNetworkRoom(initialRoomId);
