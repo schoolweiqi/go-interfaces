@@ -8,6 +8,7 @@ class GoBoard {
           this.stones = [];
           this.history = [];
           this.lastMove = null;
+          this.removedStoneKeys = new Set();
           this.onIntersection = null;
           this.showClean = false;
           this.showFaces = false;
@@ -48,6 +49,7 @@ class GoBoard {
           this.stones = Array(this.size * this.size).fill(0);
           this.history = [];
           this.lastMove = null;
+          this.removedStoneKeys = new Set();
           this.positionHistory = [this.positionKey()];
           this.captures = { 1: 0, 2: 0 };
           this.sgfSetup = { black: [], white: [] };
