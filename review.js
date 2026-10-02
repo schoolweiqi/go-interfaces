@@ -27,6 +27,10 @@
     letter: 0,
     manualClose: false,
     reconnectTimer: null,
+    reconnectAttempt: 0,
+    connecting: false,
+    heartbeatTimer: null,
+    lastServerSeenAt: 0,
     connectedParticipants: 1,
     applyingRemote: false,
     lastBoardKey: ''
@@ -377,29 +381,117 @@
     board.draw();
   }
 
-  function scheduleReconnect(){
-    if(!state.roomId||state.manualClose) return;
+  const RECONNECT_DELAYS_MS=[150,500,1000,2000,4000,8000,15000];
+
+  function stopHeartbeat(){
+    if(state.heartbeatTimer) clearInterval(state.heartbeatTimer);
+    state.heartbeatTimer=null;
+  }
+
+  function startHeartbeat(ws){
+    stopHeartbeat();
+    state.lastServerSeenAt=Date.now();
+
+    const beat=()=>{
+      if(state.socket!==ws||ws.readyState!==WebSocket.OPEN) return;
+
+      const now=Date.now();
+      // В фоне браузеры могут сильно замедлять таймеры. Поэтому heartbeat
+      // принудительно закрывает "зависший" сокет только когда вкладка активна.
+      if(!document.hidden&&state.lastServerSeenAt&&now-state.lastServerSeenAt>50000){
+        console.warn('[review] WebSocket heartbeat timeout; reconnecting');
+        try{ws.close(4000,'heartbeat timeout')}catch(_){}
+        return;
+      }
+
+      try{ws.send('ping')}
+      catch(error){
+        console.warn('[review] WebSocket ping failed',error);
+        try{ws.close(4001,'ping failed')}catch(_){}
+      }
+    };
+
+    beat();
+    state.heartbeatTimer=setInterval(beat,20000);
+  }
+
+  function scheduleReconnect(immediate=false){
+    if(!state.roomId||state.manualClose||state.connected||state.connecting) return;
     clearTimeout(state.reconnectTimer);
-    setStatus(navigator.onLine?'Связь потеряна. Переподключаюсь…':'Нет интернета. Переподключение продолжится после восстановления сети.');
-    state.reconnectTimer=setTimeout(()=>connectSocket().catch(scheduleReconnect),1800);
+
+    const attempt=state.reconnectAttempt;
+    const delay=immediate?0:RECONNECT_DELAYS_MS[Math.min(attempt,RECONNECT_DELAYS_MS.length-1)];
+    state.reconnectAttempt=Math.min(attempt+1,RECONNECT_DELAYS_MS.length-1);
+
+    setStatus(
+      navigator.onLine
+        ? (delay<=200?'Связь потеряна. Переподключаюсь…':`Связь потеряна. Новая попытка через ${Math.max(1,Math.ceil(delay/1000))} сек.`)
+        : 'Нет интернета. Переподключение продолжится после восстановления сети.'
+    );
+
+    state.reconnectTimer=setTimeout(()=>{
+      state.reconnectTimer=null;
+      connectSocket().catch(error=>{
+        if(state.manualClose||!state.roomId) return;
+        console.warn('[review] Reconnect failed',error);
+        scheduleReconnect(false);
+      });
+    },delay);
   }
 
   async function connectSocket(){
+    if(state.connecting||state.connected||state.manualClose||!state.roomId||!state.token) return;
+    state.connecting=true;
     clearTimeout(state.reconnectTimer);
+    state.reconnectTimer=null;
+
     const wsBase=SERVER.replace(/^http/,'ws');
     const ws=new WebSocket(`${wsBase}/api/reviews/${encodeURIComponent(state.roomId)}/ws?token=${encodeURIComponent(state.token)}`);
-    state.socket=ws;state.manualClose=false;
-    await new Promise((resolve,reject)=>{
-      const t=setTimeout(()=>reject(new Error('Таймаут подключения')),10000);
-      ws.addEventListener('open',()=>{clearTimeout(t);resolve()},{once:true});
-      ws.addEventListener('error',()=>{clearTimeout(t);reject(new Error('WebSocket не подключился'))},{once:true});
-    });
-    state.connected=true;saveCredential();
+    state.socket=ws;
+
+    try{
+      await new Promise((resolve,reject)=>{
+        let settled=false;
+        const finish=(fn,value)=>{
+          if(settled) return;
+          settled=true;
+          clearTimeout(t);
+          fn(value);
+        };
+        const t=setTimeout(()=>finish(reject,new Error('Таймаут подключения')),8000);
+        ws.addEventListener('open',()=>finish(resolve),{once:true});
+        ws.addEventListener('error',()=>finish(reject,new Error('WebSocket не подключился')),{once:true});
+      });
+    }catch(error){
+      state.connecting=false;
+      if(state.socket===ws) state.socket=null;
+      try{ws.close()}catch(_){}
+      throw error;
+    }
+
+    if(state.manualClose||state.socket!==ws){
+      state.connecting=false;
+      try{ws.close(1000,'connection superseded')}catch(_){}
+      return;
+    }
+
+    state.connecting=false;
+    state.connected=true;
+    state.reconnectAttempt=0;
+    saveCredential();
     createButton.hidden=true;leaveButton.hidden=false;linkBox.hidden=false;
     linkInput.value=reviewLink(state.roomId);setReviewUrl(state.roomId);
     setStatus('Подключено к совместному разбору.');updateIdentity();
+    startHeartbeat(ws);
 
     ws.addEventListener('message',e=>{
+      if(state.socket!==ws) return;
+      state.lastServerSeenAt=Date.now();
+
+      // Cloudflare Durable Object отвечает на этот ping автоматически, не
+      // пробуждая объект. Это поддерживает соединение через NAT/proxy.
+      if(e.data==='pong') return;
+
       let msg;try{msg=JSON.parse(e.data)}catch(_){return}
       if(msg.type==='hello'){
         state.participantIndex=Number(msg.participantIndex||0);
@@ -409,8 +501,27 @@
       } else if(msg.type==='state') acceptServerState(msg.state);
       else if(msg.type==='error') setStatus('Сервер: '+msg.error);
     });
-    ws.addEventListener('close',()=>{if(state.socket===ws)state.socket=null;state.connected=false;updateIdentity();scheduleReconnect()});
-    ws.addEventListener('error',()=>{});
+
+    ws.addEventListener('close',event=>{
+      if(state.socket!==ws) return;
+      stopHeartbeat();
+      state.socket=null;
+      state.connected=false;
+      state.connecting=false;
+      updateIdentity();
+
+      console.warn('[review] WebSocket closed',{
+        code:event.code,
+        reason:event.reason||'',
+        wasClean:event.wasClean
+      });
+
+      if(!state.manualClose) scheduleReconnect(false);
+    });
+
+    ws.addEventListener('error',event=>{
+      if(state.socket===ws) console.warn('[review] WebSocket error',event);
+    });
   }
 
   async function activateRoom(id,token,index=0){
@@ -442,7 +553,8 @@
   }
 
   function leaveRoom(){
-    state.manualClose=true;clearTimeout(state.reconnectTimer);
+    state.manualClose=true;clearTimeout(state.reconnectTimer);stopHeartbeat();
+    state.reconnectTimer=null;state.reconnectAttempt=0;state.connecting=false;
     try{state.socket?.close(1000,'user left')}catch(_){}
     state.socket=null;state.connected=false;state.roomId=null;state.token=null;state.host=false;state.connectedParticipants=1;
     createButton.hidden=false;leaveButton.hidden=true;linkBox.hidden=true;setReviewUrl(null);updateIdentity();
@@ -462,7 +574,17 @@
     try{await navigator.clipboard.writeText(linkInput.value);copyButton.textContent='Скопировано';setTimeout(()=>copyButton.textContent='Копировать',1200)}
     catch(_){linkInput.select();document.execCommand('copy')}
   });
-  window.addEventListener('online',()=>{if(state.roomId&&!state.connected)connectSocket().catch(scheduleReconnect)});
+  window.addEventListener('online',()=>{if(state.roomId&&!state.connected)scheduleReconnect(true)});
+  window.addEventListener('offline',()=>{if(state.roomId&&!state.manualClose)setStatus('Нет интернета. Переподключение продолжится после восстановления сети.')});
+  document.addEventListener('visibilitychange',()=>{
+    if(document.hidden||!state.roomId||state.manualClose) return;
+    if(state.socket?.readyState===WebSocket.OPEN){
+      state.lastServerSeenAt=Date.now();
+      try{state.socket.send('ping')}catch(_){}
+    }else if(!state.connected){
+      scheduleReconnect(true);
+    }
+  });
 
   const initialRoom=new URL(location.href).searchParams.get('review');
   if(initialRoom) joinRoom(initialRoom);
