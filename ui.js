@@ -1,5 +1,66 @@
 // DOM references, UI controls and user interaction wiring.
 
+// Controller for the optional thinking pause before a move.
+// It is initialized here so board interaction cannot depend on a separate script file.
+window.movePause = (() => {
+  let timer = null;
+
+  return {
+    enabled: false,
+    delaySeconds: 5,
+    lockedUntil: 0,
+
+    setEnabled(value) {
+      this.enabled = Boolean(value);
+      if (!this.enabled) this.clear();
+    },
+
+    setDelay(value) {
+      const numeric = Number(value);
+      this.delaySeconds = Math.max(
+        0,
+        Math.min(3600, Number.isFinite(numeric) ? Math.round(numeric) : 5)
+      );
+      if (this.isLocked()) {
+        this.lockedUntil = Date.now() + this.delaySeconds * 1000;
+        this.scheduleUnlock();
+      }
+    },
+
+    arm() {
+      if (!this.enabled || this.delaySeconds <= 0) {
+        this.clear();
+        return;
+      }
+      this.lockedUntil = Date.now() + this.delaySeconds * 1000;
+      this.scheduleUnlock();
+    },
+
+    clear() {
+      this.lockedUntil = 0;
+      if (timer) clearTimeout(timer);
+      timer = null;
+    },
+
+    isLocked() {
+      return this.enabled && Date.now() < this.lockedUntil;
+    },
+
+    remainingSeconds() {
+      if (!this.isLocked()) return 0;
+      return Math.max(1, Math.ceil((this.lockedUntil - Date.now()) / 1000));
+    },
+
+    scheduleUnlock() {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        this.lockedUntil = 0;
+      }, Math.max(0, this.lockedUntil - Date.now()) + 20);
+    }
+  };
+})();
+
     const board = new GoBoard(document.getElementById('board'), 19);
     window.goBoardInstance = board;
     const boardCleanBtn = document.getElementById('boardClean');
@@ -40,8 +101,8 @@
       boardFogBtn.classList.toggle('active', board.showFog);
     });
     boardPauseBtn.addEventListener('click', () => {
-      movePause.setEnabled(!movePause.enabled);
-      boardPauseBtn.classList.toggle('active', movePause.enabled);
+      window.movePause.setEnabled(!window.movePause.enabled);
+      boardPauseBtn.classList.toggle('active', window.movePause.enabled);
     });
     influenceStrengthInput.addEventListener('input', () => {
       board.setInfluenceStrength(influenceStrengthInput.value);
@@ -58,12 +119,12 @@
     influenceNumbersInput.addEventListener('change', () => {
       board.setInfluenceNumbersVisible(influenceNumbersInput.checked);
     });
-    movePause.setDelay(movePauseSecondsInput.value);
-    boardPauseBtn.classList.toggle('active', movePause.enabled);
+    window.movePause.setDelay(movePauseSecondsInput.value);
+    boardPauseBtn.classList.toggle('active', window.movePause.enabled);
 
     movePauseSecondsInput.addEventListener('input', () => {
-      movePause.setDelay(movePauseSecondsInput.value);
-      movePauseSecondsInput.value = String(movePause.delaySeconds);
+      window.movePause.setDelay(movePauseSecondsInput.value);
+      movePauseSecondsInput.value = String(window.movePause.delaySeconds);
     });
     const sizeSelect = document.getElementById('size');
     const speedSelect = document.getElementById('speed');
@@ -182,8 +243,8 @@
     }
 
     function pauseBlocksMove(messageTarget = gameMsg) {
-      if (!movePause.isLocked()) return false;
-      const seconds = movePause.remainingSeconds();
+      if (!window.movePause.isLocked()) return false;
+      const seconds = window.movePause.remainingSeconds();
       if (messageTarget) messageTarget.textContent = `Пауза перед ходом: подождите ещё ${seconds} сек.`;
       return true;
     }
@@ -310,7 +371,7 @@
       recordLocalTreeMove({ color: turn, pass: false, x, y });
       updateCaptures();
       switchTurn();
-      movePause.arm();
+      window.movePause.arm();
     };
 
     sizeSelect.addEventListener('change', () => {
@@ -373,7 +434,7 @@
       recordLocalTreeMove({ color: passingColor, pass: true, x: null, y: null });
       gameMsg.textContent = passingColor === 1 ? 'Чёрные пасуют.' : 'Белые пасуют.';
       switchTurn();
-      movePause.arm();
+      window.movePause.arm();
     });
 
     document.getElementById('undo').addEventListener('click', () => {

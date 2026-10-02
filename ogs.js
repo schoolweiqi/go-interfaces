@@ -1212,7 +1212,7 @@ function applyOgsMoveEvent(data) {
     color !== ogsGame.color &&
     turn === ogsGame.color
   ) {
-    movePause.arm();
+    window.movePause.arm();
   }
 
   setOgsStatus(
@@ -1285,8 +1285,8 @@ function handleOgsBoardClick(x, y) {
   }
 
   if (ogsGame.phase !== "play") return;
-  if (movePause.isLocked()) {
-    setOgsStatus(`Пауза перед ходом: подождите ещё ${movePause.remainingSeconds()} сек.`);
+  if (window.movePause.isLocked()) {
+    setOgsStatus(`Пауза перед ходом: подождите ещё ${window.movePause.remainingSeconds()} сек.`);
     return;
   }
   if (!ogsSocketReady || ogsGame.awaitingMove) return;
@@ -1319,8 +1319,8 @@ function handleOgsBoardClick(x, y) {
 
 function submitOgsPass() {
   if (!ogsGame.active || ogsGame.phase !== "play") return;
-  if (movePause.isLocked()) {
-    setOgsStatus(`Пауза перед ходом: подождите ещё ${movePause.remainingSeconds()} сек.`);
+  if (window.movePause.isLocked()) {
+    setOgsStatus(`Пауза перед ходом: подождите ещё ${window.movePause.remainingSeconds()} сек.`);
     return;
   }
   if (!ogsSocketReady || ogsGame.awaitingMove) return;

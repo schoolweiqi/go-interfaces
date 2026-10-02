@@ -78,7 +78,7 @@
         (lastMoveColor === 1 || lastMoveColor === 2) &&
         lastMoveColor !== networkGame.color
       ) {
-        movePause.arm();
+        window.movePause.arm();
       }
       const colorText = networkGame.color === 1 ? 'чёрные' : networkGame.color === 2 ? 'белые' : 'наблюдатель';
       const blackOnline = state.presence?.black ? '● в сети' : '● не в сети';
