@@ -174,6 +174,7 @@ GoBoard.prototype.draw = function() {
         }
 
         this.drawLastMoveMarker(pad, step);
+        this.drawRemovedStoneMarks(pad, step);
         this.drawInfluenceNumbers(pad, step);
 
         /*
@@ -251,6 +252,31 @@ GoBoard.prototype.drawCoordinates = function(pad, step, cssSize, color = '#2d211
           const py = pad + y * step;
           c.fillText(label, leftX, py);
           c.fillText(label, rightX, py);
+        }
+        c.restore();
+      };
+
+GoBoard.prototype.drawRemovedStoneMarks = function(pad, step) {
+        if (!this.removedStoneKeys || !this.removedStoneKeys.size) return;
+        const c = this.ctx;
+        c.save();
+        c.strokeStyle = 'rgba(210,55,55,.95)';
+        c.lineWidth = Math.max(2, step * 0.065);
+        c.lineCap = 'round';
+        for (const key of this.removedStoneKeys) {
+          const parts = String(key).split(',').map(Number);
+          const x = parts[0];
+          const y = parts[1];
+          if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+          const cx = pad + x * step;
+          const cy = pad + y * step;
+          const r = step * 0.22;
+          c.beginPath();
+          c.moveTo(cx - r, cy - r);
+          c.lineTo(cx + r, cy + r);
+          c.moveTo(cx + r, cy - r);
+          c.lineTo(cx - r, cy + r);
+          c.stroke();
         }
         c.restore();
       };
