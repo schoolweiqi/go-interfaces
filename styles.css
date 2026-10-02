@@ -60,6 +60,43 @@ main {
   padding: 14px;
 }
 h2 { font-size: 16px; margin: 0 0 12px; }
+.panelHeading {
+  margin: 0;
+}
+.panelToggle {
+  position: relative;
+  width: 100%;
+  min-height: 28px !important;
+  margin: 0 !important;
+  padding: 0 22px 0 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: #eeeeee !important;
+  font-size: 16px !important;
+  font-weight: 700;
+  line-height: 1.2 !important;
+  text-align: left;
+}
+.panelToggle::after {
+  content: "▾";
+  position: absolute;
+  right: 1px;
+  top: 50%;
+  transform: translateY(-50%) rotate(-90deg);
+  color: #9ca3aa;
+  font-size: 13px;
+  transition: transform .12s ease;
+}
+.panelToggle[aria-expanded="true"]::after {
+  transform: translateY(-50%) rotate(0deg);
+}
+.panelBody {
+  margin-top: 12px;
+}
+.panelBody[hidden] {
+  display: none;
+}
 p { margin: 0 0 12px; line-height: 1.45; }
 .muted { color: #9ca3aa; font-size: 13px; }
 
@@ -279,6 +316,19 @@ canvas {
 
 /* Настройки. */
 .settings button { margin-bottom: 0; }
+.settings > .panelToggle {
+  background: #2d3136 !important;
+  border: 1px solid #454b52 !important;
+  border-radius: 7px !important;
+  padding: 0 24px 0 7px !important;
+  font-size: 11px !important;
+}
+.ogsPlayActions {
+  margin: 8px 0 9px;
+}
+.ogsPlayActions button {
+  margin: 0;
+}
 .settingsBody {
   display: grid;
   gap: 10px;

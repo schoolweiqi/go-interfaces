@@ -39,6 +39,8 @@ const ogsClock = document.getElementById("ogsClock");
 const ogsStoneRemoval = document.getElementById("ogsStoneRemoval");
 const ogsAcceptScoreButton = document.getElementById("ogsAcceptScore");
 const ogsResumePlayButton = document.getElementById("ogsResumePlay");
+const ogsPlayActions = document.getElementById("ogsPlayActions");
+const ogsPassButton = document.getElementById("ogsPass");
 const ogsResignButton = document.getElementById("ogsResign");
 const ogsResult = document.getElementById("ogsResult");
 
@@ -599,8 +601,19 @@ function refreshOgsControls() {
     ogsChallengePlayerUrl.disabled = activeLiveGame || pendingBotChallenge;
   }
 
+  const showPlayActions = Boolean(ogsGame.active && ogsGame.phase === "play");
+  if (ogsPlayActions) {
+    ogsPlayActions.hidden = !showPlayActions;
+  }
+  if (ogsPassButton) {
+    ogsPassButton.disabled =
+      !showPlayActions ||
+      !ogsSocketReady ||
+      ogsGame.awaitingMove ||
+      ogsGame.color !== turn;
+  }
   if (ogsResignButton) {
-    ogsResignButton.hidden = !(ogsGame.active && ogsGame.phase === "play");
+    ogsResignButton.disabled = !showPlayActions || !ogsSocketReady;
   }
 
   if (ogsStoneRemoval) {
@@ -1659,6 +1672,7 @@ ogsBotButton.addEventListener("click", () => {
 });
 ogsAcceptScoreButton.addEventListener("click", acceptOgsRemovedStones);
 ogsResumePlayButton.addEventListener("click", resumeOgsPlay);
+ogsPassButton.addEventListener("click", submitOgsPass);
 ogsResignButton.addEventListener("click", resignOgsGame);
 
 setInterval(() => {

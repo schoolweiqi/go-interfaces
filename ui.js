@@ -15,8 +15,7 @@
     const influenceGradientFalloffInput = document.getElementById('influenceGradientFalloff');
     const influenceStonePointClampInput = document.getElementById('influenceStonePointClamp');
     const influenceNumbersInput = document.getElementById('influenceNumbers');
-    const settingsToggle = document.getElementById('settingsToggle');
-    const settingsBody = document.getElementById('settingsBody');
+    const panelToggles = document.querySelectorAll('.panelToggle');
 
     boardCleanBtn.addEventListener('click', () => {
       board.setCleanVisible(!board.showClean);
@@ -42,11 +41,17 @@
       board.setFogVisible(!board.showFog);
       boardFogBtn.classList.toggle('active', board.showFog);
     });
-    settingsToggle.addEventListener('click', () => {
-      const opening = settingsBody.hidden;
-      settingsBody.hidden = !opening;
-      settingsToggle.setAttribute('aria-expanded', String(opening));
-      settingsToggle.classList.toggle('active', opening);
+    panelToggles.forEach((toggle) => {
+      const bodyId = toggle.getAttribute('aria-controls');
+      const body = bodyId ? document.getElementById(bodyId) : null;
+      if (!body) return;
+
+      toggle.addEventListener('click', () => {
+        const opening = body.hidden;
+        body.hidden = !opening;
+        toggle.setAttribute('aria-expanded', String(opening));
+        toggle.classList.toggle('active', opening);
+      });
     });
     influenceStrengthInput.addEventListener('input', () => {
       board.setInfluenceStrength(influenceStrengthInput.value);

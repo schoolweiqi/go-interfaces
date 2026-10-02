@@ -19,7 +19,12 @@
           <img src="school-go-logo-site.webp" alt="Школа Го Алексея Нечаева">
         </div>
         <section class="panel modesPanel">
-          <h2>Режим отображения</h2>
+          <h2 class="panelHeading">
+            <button class="panelToggle" type="button" aria-expanded="true" aria-controls="modesPanelBody">
+              Режим отображения
+            </button>
+          </h2>
+          <div id="modesPanelBody" class="panelBody">
           <div class="boardModes" aria-label="Режимы отображения доски">
             <button id="boardClean" type="button">чистое поле</button>
             <button id="boardFaces" type="button">лица</button>
@@ -28,10 +33,16 @@
             <button id="boardPhantom" type="button">фантом</button>
             <button id="boardFog" type="button">туман</button>
           </div>
+          </div>
         </section>
 
         <section class="panel controls">
-          <h2>Партия</h2>
+          <h2 class="panelHeading">
+            <button class="panelToggle" type="button" aria-expanded="true" aria-controls="gamePanelBody">
+              Партия
+            </button>
+          </h2>
+          <div id="gamePanelBody" class="panelBody">
 
           <div class="gameStateRow">
             <div class="turn">
@@ -59,10 +70,16 @@
           </div>
 
           <div id="gameMsg" class="gameMessage"></div>
+          </div>
         </section>
 
         <section class="panel ogs">
-          <h2>ОГС</h2>
+          <h2 class="panelHeading">
+            <button class="panelToggle" type="button" aria-expanded="true" aria-controls="ogsPanelBody">
+              ОГС
+            </button>
+          </h2>
+          <div id="ogsPanelBody" class="panelBody">
           <div class="ogsPreset">19 × 19 · Japanese · Live · byo-yomi</div>
 
           <div class="row ogsAuthActions">
@@ -98,12 +115,21 @@
             <button id="ogsResumePlay" class="secondary" type="button">Продолжить игру</button>
           </div>
 
-          <button id="ogsResign" class="secondary ogsDanger" type="button" hidden>Сдаться</button>
+          <div id="ogsPlayActions" class="row ogsPlayActions" hidden>
+            <button id="ogsPass" class="secondary" type="button">Пас</button>
+            <button id="ogsResign" class="secondary ogsDanger" type="button">Сдаться</button>
+          </div>
           <div id="ogsResult" class="ogsResult" hidden></div>
+          </div>
         </section>
 
         <section class="panel network">
-          <h2>Онлайн-партия</h2>
+          <h2 class="panelHeading">
+            <button class="panelToggle" type="button" aria-expanded="true" aria-controls="networkPanelBody">
+              Онлайн-партия
+            </button>
+          </h2>
+          <div id="networkPanelBody" class="panelBody">
           <label>
             Размер доски
             <select id="networkSize">
@@ -119,6 +145,7 @@
             <button id="copyNetworkLink" class="secondary" type="button">Копировать</button>
           </div>
           <div class="networkStatus" id="networkStatus">Создайте партию и отправьте ссылку второму игроку.</div>
+          </div>
         </section>
 
         <div hidden aria-hidden="true">
@@ -128,7 +155,12 @@
         </div>
 
         <section class="panel bot">
-          <h2>Игра с GNU Go</h2>
+          <h2 class="panelHeading">
+            <button class="panelToggle" type="button" aria-expanded="true" aria-controls="botPanelBody">
+              Игра с GNU Go
+            </button>
+          </h2>
+          <div id="botPanelBody" class="panelBody">
           <label>
             Размер доски
             <select id="botSize">
@@ -170,10 +202,11 @@
           <button id="stopBotGame" class="secondary" hidden>Завершить игру с ботом</button>
           <div class="botStatusBox" id="botStatus">GNU Go ещё не загружен.</div>
           <div class="botScore" id="botScore" hidden></div>
+          </div>
         </section>
 
         <section class="panel settings">
-          <button id="settingsToggle" class="secondary" type="button" aria-expanded="false">Настройки</button>
+          <button id="settingsToggle" class="secondary panelToggle" type="button" aria-expanded="false" aria-controls="settingsBody">Настройки</button>
           <div id="settingsBody" class="settingsBody" hidden>
             <div class="settingsGroup">
               <h3>Влияние</h3>
