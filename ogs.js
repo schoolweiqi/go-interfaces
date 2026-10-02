@@ -778,8 +778,13 @@ function applyOgsMoveEvent(data) {
 
   const serverMoveNumber = Number(data.move_number);
   if (Number.isFinite(serverMoveNumber)) {
-    if (serverMoveNumber < ogsGame.moveNumber) return;
-    if (serverMoveNumber > ogsGame.moveNumber) {
+    const expectedMoveNumber = ogsGame.moveNumber + 1;
+
+    // OGS numbers the incoming move itself: after N moves are already on the
+    // board, the next event carries move_number = N + 1. The previous code
+    // compared it with N and therefore rejected every live move as "missing".
+    if (serverMoveNumber <= ogsGame.moveNumber) return;
+    if (serverMoveNumber > expectedMoveNumber) {
       resyncOgsGame("Обнаружен пропущенный ход. Синхронизирую позицию с OGS…");
       return;
     }
@@ -798,7 +803,9 @@ function applyOgsMoveEvent(data) {
   }
 
   ogsGame.moves.push(move);
-  ogsGame.moveNumber += 1;
+  ogsGame.moveNumber = Number.isFinite(serverMoveNumber)
+    ? serverMoveNumber
+    : ogsGame.moveNumber + 1;
   ogsGame.awaitingMove = false;
   turn = color === 1 ? 2 : 1;
 
