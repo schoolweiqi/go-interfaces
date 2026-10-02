@@ -59,6 +59,56 @@ export default {
       return json({ roomId: id, playerToken: creatorToken, color: 1, size }, 201, cors(origin));
     }
 
+    if (request.method === "POST" && url.pathname === "/api/reviews") {
+      let body = {};
+      try { body = await request.json(); } catch (_) {}
+      const boardState = body.boardState || {};
+      const size = Number(boardState.size);
+      if (![9, 13, 19].includes(size)) return json({ error: "Недопустимый размер доски" }, 400, cors(origin));
+      if (!Array.isArray(boardState.board) || boardState.board.length !== size * size) {
+        return json({ error: "Некорректная позиция разбора" }, 400, cors(origin));
+      }
+      const id = roomId();
+      const creatorToken = token();
+      const stub = env.GAME_ROOMS.getByName(`REVIEW:${id}`);
+      const response = await stub.fetch(new Request("https://room.internal/init", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          roomId: id,
+          size,
+          creatorToken,
+          roomType: "review",
+          boardState,
+          items: Array.isArray(body.items) ? body.items : []
+        })
+      }));
+      if (!response.ok) return json({ error: "Не удалось создать комнату разбора" }, 500, cors(origin));
+      return json({ roomId: id, participantToken: creatorToken, participantIndex: 0, size }, 201, cors(origin));
+    }
+
+    if (parts[0] === "api" && parts[1] === "reviews" && parts[2]) {
+      const id = parts[2].toUpperCase();
+      const stub = env.GAME_ROOMS.getByName(`REVIEW:${id}`);
+
+      if (parts[3] === "join" && request.method === "POST") {
+        const response = await stub.fetch(new Request("https://room.internal/join", { method: "POST" }));
+        return new Response(response.body, { status: response.status, headers: { ...Object.fromEntries(response.headers), ...cors(origin) } });
+      }
+
+      if (parts[3] === "ws") {
+        if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") return json({ error: "Expected WebSocket" }, 426, cors(origin));
+        const internal = new URL("https://room.internal/ws");
+        internal.searchParams.set("token", url.searchParams.get("token") || "");
+        return stub.fetch(new Request(internal, request));
+      }
+
+      if (request.method === "GET" && parts.length === 3) {
+        const response = await stub.fetch(new Request("https://room.internal/state"));
+        return new Response(response.body, { status: response.status, headers: { ...Object.fromEntries(response.headers), ...cors(origin) } });
+      }
+    }
+
     if (parts[0] === "api" && parts[1] === "rooms" && parts[2]) {
       const id = parts[2].toUpperCase();
       const stub = env.GAME_ROOMS.getByName(id);
@@ -105,7 +155,7 @@ export class GameRoom extends DurableObject {
   initialState(roomId, size, creatorToken) {
     const board = Array(size * size).fill(0);
     return {
-      roomId, size, board, turn: 1,
+      roomId, roomType: "game", size, board, turn: 1,
       captures: { black: 0, white: 0 },
       blackToken: creatorToken,
       whiteToken: null,
@@ -117,11 +167,49 @@ export class GameRoom extends DurableObject {
     };
   }
 
+  initialReviewState(roomId, creatorToken, boardState = {}, items = []) {
+    const size = Number(boardState.size);
+    const sourceBoard = Array.isArray(boardState.board) ? boardState.board : [];
+    const board = sourceBoard.length === size * size
+      ? sourceBoard.map(value => [0, 1, 2].includes(Number(value)) ? Number(value) : 0)
+      : Array(size * size).fill(0);
+
+    const state = {
+      roomId,
+      roomType: "review",
+      size,
+      boardState: {
+        size,
+        board,
+        captures: {
+          black: Number(boardState.captures?.black || 0),
+          white: Number(boardState.captures?.white || 0)
+        },
+        lastMove: boardState.lastMove && typeof boardState.lastMove === "object"
+          ? { ...boardState.lastMove }
+          : null
+      },
+      items: [],
+      participants: [{ token: creatorToken, index: 0 }],
+      nextParticipantIndex: 1,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+
+    state.items = (Array.isArray(items) ? items : [])
+      .slice(0, 5000)
+      .map(item => this.sanitizeReviewItem(state, item, 0))
+      .filter(Boolean);
+    return state;
+  }
+
   async init(request) {
     const existing = await this.ctx.storage.get("state");
     if (existing) return json({ error: "Room already exists" }, 409);
-    const { roomId, size, creatorToken } = await request.json();
-    const state = this.initialState(roomId, size, creatorToken);
+    const payload = await request.json();
+    const state = payload.roomType === "review"
+      ? this.initialReviewState(payload.roomId, payload.creatorToken, payload.boardState, payload.items)
+      : this.initialState(payload.roomId, payload.size, payload.creatorToken);
     await this.ctx.storage.put("state", state);
     return json({ ok: true });
   }
@@ -130,6 +218,18 @@ export class GameRoom extends DurableObject {
     const state = await this.ctx.storage.get("state");
     if (!state) return json({ error: "Комната не найдена или уже удалена" }, 404);
     if (state.status === "expired") return json({ error: "Комната удалена" }, 410);
+
+    if (state.roomType === "review") {
+      const participantToken = token();
+      const participantIndex = Number(state.nextParticipantIndex || 1);
+      state.nextParticipantIndex = participantIndex + 1;
+      state.participants = Array.isArray(state.participants) ? state.participants : [];
+      state.participants.push({ token: participantToken, index: participantIndex });
+      state.updatedAt = Date.now();
+      await this.ctx.storage.put("state", state);
+      return json({ participantToken, participantIndex, size: state.size });
+    }
+
     if (!state.whiteToken) {
       state.whiteToken = token();
       state.updatedAt = Date.now();
@@ -140,6 +240,8 @@ export class GameRoom extends DurableObject {
   }
 
   publicState(state) {
+    if (state.roomType === "review") return this.publicReviewState(state);
+
     const presence = { black: false, white: false };
     for (const ws of this.ctx.getWebSockets()) {
       try {
@@ -161,6 +263,24 @@ export class GameRoom extends DurableObject {
     };
   }
 
+  publicReviewState(state) {
+    const connected = new Set();
+    for (const ws of this.ctx.getWebSockets()) {
+      try {
+        const a = ws.deserializeAttachment();
+        if (Number.isInteger(Number(a?.participantIndex))) connected.add(Number(a.participantIndex));
+      } catch (_) {}
+    }
+    return {
+      roomId: state.roomId,
+      roomType: "review",
+      size: state.size,
+      boardState: state.boardState,
+      items: Array.isArray(state.items) ? state.items : [],
+      connectedParticipants: connected.size
+    };
+  }
+
   async getStateResponse() {
     const state = await this.ctx.storage.get("state");
     if (!state) return json({ error: "Комната не найдена" }, 404);
@@ -171,6 +291,32 @@ export class GameRoom extends DurableObject {
     const state = await this.ctx.storage.get("state");
     if (!state) return json({ error: "Комната не найдена или уже удалена" }, 404);
     const supplied = url.searchParams.get("token") || "";
+
+    if (state.roomType === "review") {
+      const participants = Array.isArray(state.participants) ? state.participants : [];
+      const participant = participants.find(entry => entry?.token === supplied);
+      if (!participant) return json({ error: "Недействительный ключ участника" }, 403);
+
+      const pair = new WebSocketPair();
+      const [client, server] = Object.values(pair);
+      this.ctx.acceptWebSocket(server);
+      server.serializeAttachment({
+        token: supplied,
+        participantIndex: Number(participant.index),
+        roomType: "review"
+      });
+      await this.ctx.storage.deleteAlarm();
+      await this.ctx.storage.delete("emptySince");
+      server.send(JSON.stringify({
+        type: "hello",
+        participantIndex: Number(participant.index),
+        isHost: Number(participant.index) === 0,
+        state: this.publicState(state)
+      }));
+      this.broadcastState(state);
+      return new Response(null, { status: 101, webSocket: client });
+    }
+
     let color = null;
     if (supplied === state.blackToken) color = 1;
     if (supplied === state.whiteToken) color = 2;
@@ -194,6 +340,11 @@ export class GameRoom extends DurableObject {
     const attachment = ws.deserializeAttachment();
     const state = await this.ctx.storage.get("state");
     if (!state) return this.sendError(ws, "Комната удалена");
+
+    if (state.roomType === "review") {
+      return this.handleReviewMessage(ws, data, attachment, state);
+    }
+
     if (state.status !== "playing") return this.sendError(ws, "Партия уже завершена");
     const color = attachment?.color;
     if (color !== 1 && color !== 2) return this.sendError(ws, "Неизвестный игрок");
@@ -209,6 +360,116 @@ export class GameRoom extends DurableObject {
       else state.turn = color === 1 ? 2 : 1;
     } else {
       return this.sendError(ws, "Неизвестная команда");
+    }
+
+    state.updatedAt = Date.now();
+    await this.ctx.storage.put("state", state);
+    this.broadcastState(state);
+  }
+
+  sanitizeReviewItem(state, item, authorIndex) {
+    if (!item || typeof item !== "object") return null;
+    const safeColor = value => /^#[0-9a-f]{6}$/i.test(String(value || "")) ? String(value) : null;
+
+    if (item.kind === "mark") {
+      const markTypes = new Set(["circle", "square", "triangle", "cross", "number", "letter", "color-square"]);
+      const markType = String(item.markType || "");
+      const x = Number(item.x);
+      const y = Number(item.y);
+      if (!markTypes.has(markType)) return null;
+      if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= state.size || y >= state.size) return null;
+      return {
+        id: crypto.randomUUID(),
+        kind: "mark",
+        markType,
+        x,
+        y,
+        label: markType === "number" || markType === "letter" ? String(item.label || "").slice(0, 3) : "",
+        fill: markType === "color-square" ? (safeColor(item.fill) || "#ffcc33") : null,
+        authorIndex,
+        createdAt: Date.now()
+      };
+    }
+
+    if (item.kind === "line") {
+      const rawPoints = Array.isArray(item.points) ? item.points.slice(0, 1000) : [];
+      const points = rawPoints
+        .map(point => ({ x: Number(point?.x), y: Number(point?.y) }))
+        .filter(point =>
+          Number.isFinite(point.x) &&
+          Number.isFinite(point.y) &&
+          point.x >= 0 && point.y >= 0 &&
+          point.x <= state.size - 1 &&
+          point.y <= state.size - 1
+        );
+      if (points.length < 2) return null;
+      return {
+        id: crypto.randomUUID(),
+        kind: "line",
+        color: safeColor(item.color) || "#e53935",
+        points,
+        authorIndex,
+        createdAt: Date.now()
+      };
+    }
+
+    return null;
+  }
+
+  sanitizeReviewBoardState(state, boardState) {
+    if (!boardState || typeof boardState !== "object") return null;
+    const size = Number(boardState.size);
+    if (size !== state.size) return null;
+    if (!Array.isArray(boardState.board) || boardState.board.length !== size * size) return null;
+    const board = boardState.board.map(Number);
+    if (board.some(value => ![0, 1, 2].includes(value))) return null;
+
+    let lastMove = null;
+    if (boardState.lastMove && typeof boardState.lastMove === "object") {
+      const x = Number(boardState.lastMove.x);
+      const y = Number(boardState.lastMove.y);
+      const stone = Number(boardState.lastMove.stone || boardState.lastMove.color || 0);
+      if (Number.isInteger(x) && Number.isInteger(y) && x >= 0 && y >= 0 && x < size && y < size && [1, 2].includes(stone)) {
+        lastMove = { x, y, stone };
+      }
+    }
+
+    return {
+      size,
+      board,
+      captures: {
+        black: Math.max(0, Number(boardState.captures?.black || 0)),
+        white: Math.max(0, Number(boardState.captures?.white || 0))
+      },
+      lastMove
+    };
+  }
+
+  async handleReviewMessage(ws, data, attachment, state) {
+    const authorIndex = Number(attachment?.participantIndex);
+    if (!Number.isInteger(authorIndex) || authorIndex < 0) return this.sendError(ws, "Неизвестный участник");
+
+    if (data.type === "review-add") {
+      const item = this.sanitizeReviewItem(state, data.item, authorIndex);
+      if (!item) return this.sendError(ws, "Некорректная метка");
+      state.items = Array.isArray(state.items) ? state.items : [];
+      state.items.push(item);
+      if (state.items.length > 5000) state.items = state.items.slice(-5000);
+    } else if (data.type === "review-undo") {
+      state.items = Array.isArray(state.items) ? state.items : [];
+      for (let i = state.items.length - 1; i >= 0; i--) {
+        if (Number(state.items[i]?.authorIndex) === authorIndex) {
+          state.items.splice(i, 1);
+          break;
+        }
+      }
+    } else if (data.type === "review-board") {
+      if (authorIndex !== 0) return this.sendError(ws, "Позицию может менять только ведущий разбора");
+      const boardState = this.sanitizeReviewBoardState(state, data.boardState);
+      if (!boardState) return this.sendError(ws, "Некорректная позиция");
+      state.boardState = boardState;
+    } else {
+      return this.sendError(ws, "Неизвестная команда разбора");
     }
 
     state.updatedAt = Date.now();
