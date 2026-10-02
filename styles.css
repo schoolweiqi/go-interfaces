@@ -327,6 +327,18 @@ canvas {
 }
 .ogsAuthActions { margin-bottom: 4px; }
 .ogsAuthActions button { margin-bottom: 0; }
+.ogsPlayerLinkLabel {
+  display: block;
+  margin: 7px 0 4px;
+  color: #aeb4ba;
+  font-size: 11px;
+}
+.ogsPlayerLink {
+  width: 100%;
+  min-width: 0;
+  margin: 0 0 8px;
+  font-size: 11px;
+}
 .ogsMatchActions {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(70px, .42fr);
