@@ -451,7 +451,7 @@
 
   function undoLast(){
     if(state.connected){send({type:'review-undo'});return}
-    for(let i=state.items.length-1;i>=0;i--) if(Number(state.items[i]?.authorIndex||0)===state.participantIndex){state.items.splice(i,1);break}
+    state.items.pop();
     board.draw();
   }
 
