@@ -319,6 +319,41 @@ canvas {
 
 .msg { min-height: 20px; font-size: 12px; color: #d8b37f; word-break: break-word; }
 .ogsDisconnected { font-size: 14px; color: #c9ced3; }
+.ogsPreset {
+  margin: -2px 0 10px;
+  color: #9ca3aa;
+  font-size: 11px;
+  line-height: 1.35;
+}
+.ogsAuthActions { margin-bottom: 4px; }
+.ogsAuthActions button { margin-bottom: 0; }
+.ogsStatus,
+.ogsGameInfo,
+.ogsClock,
+.ogsStoneRemoval,
+.ogsResult {
+  padding: 9px 10px;
+  border-radius: 8px;
+  background: #17191b;
+  border: 1px solid #34383d;
+  margin: 6px 0 9px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #c9ced3;
+}
+.ogsGameInfo { color: #e2e5e8; }
+.ogsClock {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: #e9c98f;
+  font-weight: 700;
+  letter-spacing: .02em;
+}
+.ogsStoneRemoval { border-color: #5b4933; color: #d7c3a2; }
+.ogsStoneRemoval button:first-of-type { margin-top: 9px; }
+.ogsResult { border-color: #5b4933; color: #e9c98f; font-size: 12px; }
+.ogsDanger { border-color: #765050 !important; }
+.ogs [hidden] { display: none !important; }
 .botStatusBox {
   padding: 10px 11px;
   border-radius: 8px;
