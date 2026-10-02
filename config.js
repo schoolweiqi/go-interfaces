@@ -10,10 +10,12 @@ window.GO_NETWORK_SERVER_URL = 'https://schoolweiqi-go-network.schoolgo-alexeyne
     const OGS = {
       authUrl: 'https://online-go.com/oauth2/authorize/',
       tokenUrl: 'https://online-go.com/oauth2/token/',
+      apiUrl: 'https://online-go.com/api/v1/',
       meUrl: 'https://online-go.com/api/v1/me/',
       configUrl: 'https://online-go.com/api/v1/ui/config',
       gameApiUrl: 'https://online-go.com/api/v1/games/',
-      websocketUrl: 'wss://wsp.online-go.com'
+      websocketUrl: 'wss://wsp.online-go.com',
+      botPlayerId: 1195520
     };
 
     // URL развёрнутого Cloudflare Worker. Изменяется в network-config.js без правки index.html.
