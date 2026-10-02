@@ -8,13 +8,12 @@
     const boardInfluenceBtn = document.getElementById('boardInfluence');
     const boardPhantomBtn = document.getElementById('boardPhantom');
     const boardFogBtn = document.getElementById('boardFog');
+    const boardPauseBtn = document.getElementById('boardPause');
     const influenceStrengthInput = document.getElementById('influenceStrength');
     const influenceThreeLibFactorInput = document.getElementById('influenceThreeLibFactor');
-    const influenceIntensityInput = document.getElementById('influenceIntensity');
-    const influenceRadiusMultiplierInput = document.getElementById('influenceRadiusMultiplier');
-    const influenceGradientFalloffInput = document.getElementById('influenceGradientFalloff');
     const influenceStonePointClampInput = document.getElementById('influenceStonePointClamp');
     const influenceNumbersInput = document.getElementById('influenceNumbers');
+    const movePauseSecondsInput = document.getElementById('movePauseSeconds');
 
     boardCleanBtn.addEventListener('click', () => {
       board.setCleanVisible(!board.showClean);
@@ -40,6 +39,10 @@
       board.setFogVisible(!board.showFog);
       boardFogBtn.classList.toggle('active', board.showFog);
     });
+    boardPauseBtn.addEventListener('click', () => {
+      movePause.setEnabled(!movePause.enabled);
+      boardPauseBtn.classList.toggle('active', movePause.enabled);
+    });
     influenceStrengthInput.addEventListener('input', () => {
       board.setInfluenceStrength(influenceStrengthInput.value);
       influenceStrengthInput.value = String(board.influenceStrength);
@@ -48,24 +51,19 @@
       board.setInfluenceThreeLibFactor(influenceThreeLibFactorInput.value);
       influenceThreeLibFactorInput.value = String(board.influenceThreeLibFactor);
     });
-    influenceIntensityInput.addEventListener('input', () => {
-      board.setInfluenceIntensity(influenceIntensityInput.value);
-      influenceIntensityInput.value = String(board.influenceIntensity);
-    });
-    influenceRadiusMultiplierInput.addEventListener('input', () => {
-      board.setInfluenceRadiusMultiplier(influenceRadiusMultiplierInput.value);
-      influenceRadiusMultiplierInput.value = String(board.influenceRadiusMultiplier);
-    });
-    influenceGradientFalloffInput.addEventListener('input', () => {
-      board.setInfluenceGradientFalloff(influenceGradientFalloffInput.value);
-      influenceGradientFalloffInput.value = String(board.influenceGradientFalloff);
-    });
     influenceStonePointClampInput.addEventListener('input', () => {
       board.setInfluenceStonePointClamp(influenceStonePointClampInput.value);
       influenceStonePointClampInput.value = String(board.influenceStonePointClamp);
     });
     influenceNumbersInput.addEventListener('change', () => {
       board.setInfluenceNumbersVisible(influenceNumbersInput.checked);
+    });
+    movePause.setDelay(movePauseSecondsInput.value);
+    boardPauseBtn.classList.toggle('active', movePause.enabled);
+
+    movePauseSecondsInput.addEventListener('input', () => {
+      movePause.setDelay(movePauseSecondsInput.value);
+      movePauseSecondsInput.value = String(movePause.delaySeconds);
     });
     const sizeSelect = document.getElementById('size');
     const speedSelect = document.getElementById('speed');
@@ -183,6 +181,13 @@
       updateMoveNumber();
     }
 
+    function pauseBlocksMove(messageTarget = gameMsg) {
+      if (!movePause.isLocked()) return false;
+      const seconds = movePause.remainingSeconds();
+      if (messageTarget) messageTarget.textContent = `Пауза перед ходом: подождите ещё ${seconds} сек.`;
+      return true;
+    }
+
     function switchTurn() {
       turn = turn === 1 ? 2 : 1;
       updateTurn();
@@ -264,6 +269,8 @@
         return;
       }
 
+      if (pauseBlocksMove(gameMode === 'network' ? networkStatus : gameMsg)) return;
+
       if (gameMode === 'network') {
         const state = networkGame.lastState;
         if (!networkGame.active || !state || state.status !== 'playing') return;
@@ -303,6 +310,7 @@
       recordLocalTreeMove({ color: turn, pass: false, x, y });
       updateCaptures();
       switchTurn();
+      movePause.arm();
     };
 
     sizeSelect.addEventListener('change', () => {
@@ -334,6 +342,8 @@
 
 
     document.getElementById('pass').addEventListener('click', async () => {
+      if (gameMode !== 'ogs' && pauseBlocksMove(gameMode === 'network' ? networkStatus : gameMsg)) return;
+
       if (gameMode === 'ogs') {
         submitOgsPass();
         return;
@@ -363,6 +373,7 @@
       recordLocalTreeMove({ color: passingColor, pass: true, x: null, y: null });
       gameMsg.textContent = passingColor === 1 ? 'Чёрные пасуют.' : 'Белые пасуют.';
       switchTurn();
+      movePause.arm();
     });
 
     document.getElementById('undo').addEventListener('click', () => {

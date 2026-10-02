@@ -53,6 +53,12 @@
 
     function applyNetworkState(state) {
       if (!state || !Array.isArray(state.board)) return;
+
+      const previousState = networkGame.lastState;
+      const previousMoveNumber = Number(previousState?.moveNumber ?? previousState?.moves?.length ?? -1);
+      const nextMoveNumber = Number(state.moveNumber ?? state.moves?.length ?? -1);
+      const hasNewMove = Boolean(previousState) && nextMoveNumber > previousMoveNumber;
+      const lastMoveColor = Number(state.lastMove?.color || 0);
       if (board.size !== state.size) board.setSize(state.size);
       board.stones = state.board.slice();
       board.captures = { 1: Number(state.captures?.black || 0), 2: Number(state.captures?.white || 0) };
@@ -66,6 +72,14 @@
       board.draw();
 
       const myTurn = networkGame.color === turn && state.status === 'playing';
+      if (
+        hasNewMove &&
+        myTurn &&
+        (lastMoveColor === 1 || lastMoveColor === 2) &&
+        lastMoveColor !== networkGame.color
+      ) {
+        movePause.arm();
+      }
       const colorText = networkGame.color === 1 ? 'чёрные' : networkGame.color === 2 ? 'белые' : 'наблюдатель';
       const blackOnline = state.presence?.black ? '● в сети' : '● не в сети';
       const whiteOnline = state.presence?.white ? '○ в сети' : '○ не в сети';

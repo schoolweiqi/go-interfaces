@@ -1207,6 +1207,14 @@ function applyOgsMoveEvent(data) {
   updateTurn();
   updateCaptures();
 
+  if (
+    (ogsGame.color === 1 || ogsGame.color === 2) &&
+    color !== ogsGame.color &&
+    turn === ogsGame.color
+  ) {
+    movePause.arm();
+  }
+
   setOgsStatus(
     ogsGame.color === turn
       ? "Ваш ход."
@@ -1277,6 +1285,10 @@ function handleOgsBoardClick(x, y) {
   }
 
   if (ogsGame.phase !== "play") return;
+  if (movePause.isLocked()) {
+    setOgsStatus(`Пауза перед ходом: подождите ещё ${movePause.remainingSeconds()} сек.`);
+    return;
+  }
   if (!ogsSocketReady || ogsGame.awaitingMove) return;
 
   if (ogsGame.color !== turn) {
@@ -1307,6 +1319,10 @@ function handleOgsBoardClick(x, y) {
 
 function submitOgsPass() {
   if (!ogsGame.active || ogsGame.phase !== "play") return;
+  if (movePause.isLocked()) {
+    setOgsStatus(`Пауза перед ходом: подождите ещё ${movePause.remainingSeconds()} сек.`);
+    return;
+  }
   if (!ogsSocketReady || ogsGame.awaitingMove) return;
   if (ogsGame.color !== turn) {
     setOgsStatus("Сейчас ход соперника.");

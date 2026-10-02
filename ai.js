@@ -183,6 +183,7 @@
         }
         turn = botGame.humanColor;
         updateTurn();
+        movePause.arm();
         botStatus.textContent = botGame.levelApplied
           ? `Ваш ход (${colorName(botGame.humanColor)}). GNU Go реально играет на уровне ${botGame.appliedLevel}.`
           : `Ваш ход (${colorName(botGame.humanColor)}). Запрошен уровень ${botGame.level}, фактически ${botGame.appliedLevel}.`;
