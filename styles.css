@@ -327,6 +327,13 @@ canvas {
 }
 .ogsAuthActions { margin-bottom: 4px; }
 .ogsAuthActions button { margin-bottom: 0; }
+.ogsMatchActions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(70px, .42fr);
+  gap: 7px;
+  margin-bottom: 9px;
+}
+.ogsMatchActions button { margin: 0; }
 .ogsStatus,
 .ogsGameInfo,
 .ogsClock,
