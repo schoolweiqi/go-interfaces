@@ -322,6 +322,42 @@ window.movePause = (() => {
       updateGameTreeView();
     }
 
+    function normalizeTreeMove(move, fallbackColor = 1) {
+      const color = Number(move && move.color) === 2 ? 2 : Number(move && move.color) === 1 ? 1 : fallbackColor;
+      const x = Number(move && move.x);
+      const y = Number(move && move.y);
+      const pass = Boolean(move && move.pass) || !Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0;
+      return {
+        color,
+        pass,
+        x: pass ? null : x,
+        y: pass ? null : y
+      };
+    }
+
+    window.resetLiveGameTree = function(meta = {}, moves = []) {
+      gameTree.reset({
+        size: Number(meta.size) || board.size,
+        komi: Number.isFinite(Number(meta.komi)) ? Number(meta.komi) : board.sgfKomi,
+        initialTurn: Number(meta.initialTurn) === 2 ? 2 : 1,
+        setupBlack: Array.isArray(meta.setupBlack) ? meta.setupBlack : [],
+        setupWhite: Array.isArray(meta.setupWhite) ? meta.setupWhite : []
+      });
+
+      let nextColor = gameTree.meta.initialTurn;
+      for (const rawMove of moves) {
+        const move = normalizeTreeMove(rawMove, nextColor);
+        gameTree.addMove(move);
+        nextColor = move.color === 1 ? 2 : 1;
+      }
+      updateGameTreeView();
+    };
+
+    window.appendLiveGameTreeMove = function(move, fallbackColor = 1) {
+      gameTree.addMove(normalizeTreeMove(move, fallbackColor));
+      updateGameTreeView();
+    };
+
     board.onIntersection = async (x, y) => {
       board.phantomHover = null;
 
@@ -353,6 +389,7 @@ window.movePause = (() => {
           return;
         }
         botGame.moves.push({ color: botGame.humanColor, x, y, pass: false });
+        window.appendLiveGameTreeMove({ color: botGame.humanColor, x, y, pass: false }, botGame.humanColor);
         botGame.consecutivePasses = 0;
         updateCaptures();
         turn = botGame.botColor;
@@ -420,6 +457,7 @@ window.movePause = (() => {
         if (!botGame.active || botGame.ended || botGame.thinking) return;
         if (turn !== botGame.humanColor) return;
         applyBotPass(botGame.humanColor);
+        window.appendLiveGameTreeMove({ color: botGame.humanColor, pass: true }, botGame.humanColor);
         if (botGame.consecutivePasses >= 2) {
           await finishBotGame();
           return;

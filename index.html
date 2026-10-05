@@ -206,6 +206,22 @@
           </div>
         </section>
 
+        <section class="panel treePanel">
+          <h2 class="panelHeading">
+            <button class="panelToggle" type="button" aria-expanded="false" aria-controls="gameTreePanelBody">
+              Дерево игры
+            </button>
+          </h2>
+          <div id="gameTreePanelBody" class="panelBody" hidden>
+            <button id="deleteVariationBranch" class="secondary treeDeleteButton" type="button" disabled>
+              Удалить ветку от текущего хода
+            </button>
+            <div id="gameTreeScroller" class="gameTreeScroller">
+              <svg id="gameTreeSvg" class="gameTreeSvg" role="img" aria-label="Дерево ходов и вариаций"></svg>
+            </div>
+          </div>
+        </section>
+
         <section class="panel settings">
           <button id="settingsToggle" class="secondary panelToggle" type="button" aria-expanded="false" aria-controls="settingsBody">Настройки</button>
           <div id="settingsBody" class="settingsBody" hidden>
@@ -239,17 +255,6 @@
         <div class="boardColumn">
           <canvas id="board" aria-label="Доска Го"></canvas>
 
-          <section class="gameTreeSection" aria-label="Дерево игры">
-            <div class="gameTreeHeader">
-              <strong>Дерево игры</strong>
-              <button id="deleteVariationBranch" class="secondary treeDeleteButton" type="button" disabled>
-                Удалить ветку от текущего хода
-              </button>
-            </div>
-            <div id="gameTreeScroller" class="gameTreeScroller">
-              <svg id="gameTreeSvg" class="gameTreeSvg" role="img" aria-label="Дерево ходов и вариаций"></svg>
-            </div>
-          </section>
         </div>
       </section>
     </main>

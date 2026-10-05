@@ -171,8 +171,19 @@
         const parsed = parseSgfMove(last.coord, board.size);
         if (parsed.pass) {
           applyBotPass(botGame.botColor);
+          if (typeof window.appendLiveGameTreeMove === 'function') {
+            window.appendLiveGameTreeMove({ color: botGame.botColor, pass: true }, botGame.botColor);
+          }
         } else {
           applyBotBoardMove(botGame.botColor, parsed.x, parsed.y);
+          if (typeof window.appendLiveGameTreeMove === 'function') {
+            window.appendLiveGameTreeMove({
+              color: botGame.botColor,
+              x: parsed.x,
+              y: parsed.y,
+              pass: false
+            }, botGame.botColor);
+          }
           gameMsg.textContent = `GNU Go сыграл ${sgfCoord(parsed.x, parsed.y)}.`;
         }
         if (botGame.moves.length !== beforeCount + 1) throw new Error('Не удалось синхронизировать историю ходов GNU Go');
@@ -211,6 +222,15 @@
       botGame.levelApplied = false;
       botGame.appliedLevel = 10;
       board.setSize(Number(botSizeSelect.value));
+      if (typeof window.resetLiveGameTree === 'function') {
+        window.resetLiveGameTree({
+          size: board.size,
+          komi: botGame.komi,
+          initialTurn: 1,
+          setupBlack: [],
+          setupWhite: []
+        }, []);
+      }
       turn = 1;
       updateTurn();
       updateCaptures();

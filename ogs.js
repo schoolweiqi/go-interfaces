@@ -1120,6 +1120,16 @@ function applyOgsGamedata(data) {
 
   ogsGame.moves = moves.slice();
   ogsGame.moveNumber = moves.length;
+
+  if (typeof window.resetLiveGameTree === "function") {
+    window.resetLiveGameTree({
+      size: board.size,
+      komi: board.sgfKomi,
+      initialTurn: data.initial_player === "white" ? 2 : 1,
+      setupBlack: board.sgfSetup.black,
+      setupWhite: board.sgfSetup.white
+    }, moves);
+  }
   ogsGame.nextMoveColor = nextColor;
   turn = nextColor;
 
@@ -1193,6 +1203,14 @@ function applyOgsMoveEvent(data) {
   }
 
   ogsGame.moves.push(move);
+  if (typeof window.appendLiveGameTreeMove === "function") {
+    window.appendLiveGameTreeMove({
+      color,
+      pass: Boolean(move.pass) || move.x < 0 || move.y < 0,
+      x: move.x,
+      y: move.y
+    }, color);
+  }
   ogsGame.moveNumber = Number.isFinite(serverMoveNumber)
     ? serverMoveNumber
     : ogsGame.moveNumber + 1;
