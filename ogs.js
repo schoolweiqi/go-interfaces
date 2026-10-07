@@ -30,11 +30,10 @@ const authMsg = document.getElementById("authMsg");
 const loginButton = document.getElementById("login");
 const logoutButton = document.getElementById("logout");
 const findButton = document.getElementById("findOpponent");
-const ogsSearchSize = document.getElementById("ogsSearchSize");
-const ogsSearchSpeed = document.getElementById("ogsSearchSpeed");
+const ogsSearchSizes = document.getElementById("ogsSearchSizes");
+const ogsSearchSpeeds = document.getElementById("ogsSearchSpeeds");
 const ogsSearchLowerRank = document.getElementById("ogsSearchLowerRank");
 const ogsSearchUpperRank = document.getElementById("ogsSearchUpperRank");
-const ogsSearchTimeHint = document.getElementById("ogsSearchTimeHint");
 const ogsBotButton = document.getElementById("challengeOgsBot");
 const ogsChallengePlayerUrl = document.getElementById("ogsChallengePlayerUrl");
 const cancelButton = document.getElementById("cancelSearch");
@@ -769,21 +768,8 @@ async function connectOgsSocket(accessToken) {
 }
 
 const OGS_SEARCH_STORAGE_KEY = "schoolweiqi_ogs_search_settings";
-
-const OGS_BYOYOMI_PRESETS = {
-  9: {
-    rapid: { main: 2, periods: 5, period: 30 },
-    live: { main: 5, periods: 5, period: 30 }
-  },
-  13: {
-    rapid: { main: 3, periods: 5, period: 30 },
-    live: { main: 10, periods: 5, period: 30 }
-  },
-  19: {
-    rapid: { main: 5, periods: 5, period: 30 },
-    live: { main: 20, periods: 5, period: 30 }
-  }
-};
+const OGS_SEARCH_SIZES = [9, 13, 19];
+const OGS_SEARCH_SPEEDS = ["rapid", "live"];
 
 function clampRankDiff(value) {
   const n = Math.round(Number(value));
@@ -791,26 +777,36 @@ function clampRankDiff(value) {
   return Math.max(0, Math.min(9, n));
 }
 
+function selectedChoiceValues(container, attribute, allowedValues) {
+  if (!container) return [];
+  return [...container.querySelectorAll(".ogsChoiceButton[aria-pressed='true']")]
+    .map((button) => button.dataset[attribute])
+    .map((value) => attribute === "size" ? Number(value) : value)
+    .filter((value) => allowedValues.includes(value));
+}
+
+function setChoiceValues(container, attribute, values) {
+  if (!container) return;
+  const selected = new Set(values.map(String));
+
+  container.querySelectorAll(".ogsChoiceButton").forEach((button) => {
+    const value = String(button.dataset[attribute]);
+    const active = selected.has(value);
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+}
+
 function currentOgsSearchSettings() {
-  const size = [9, 13, 19].includes(Number(ogsSearchSize && ogsSearchSize.value))
-    ? Number(ogsSearchSize.value)
-    : 19;
-  const speed = ogsSearchSpeed && ogsSearchSpeed.value === "rapid" ? "rapid" : "live";
+  const sizes = selectedChoiceValues(ogsSearchSizes, "size", OGS_SEARCH_SIZES);
+  const speeds = selectedChoiceValues(ogsSearchSpeeds, "speed", OGS_SEARCH_SPEEDS);
 
   return {
-    size,
-    speed,
+    sizes: sizes.length ? sizes : [19],
+    speeds: speeds.length ? speeds : ["live"],
     lowerRankDiff: clampRankDiff(ogsSearchLowerRank && ogsSearchLowerRank.value),
     upperRankDiff: clampRankDiff(ogsSearchUpperRank && ogsSearchUpperRank.value)
   };
-}
-
-function renderOgsSearchTimeHint() {
-  if (!ogsSearchTimeHint) return;
-  const settings = currentOgsSearchSettings();
-  const preset = OGS_BYOYOMI_PRESETS[settings.size][settings.speed];
-  ogsSearchTimeHint.textContent =
-    "OGS: " + preset.main + " мин + " + preset.periods + "×" + preset.period + " сек";
 }
 
 function saveOgsSearchSettings() {
@@ -822,45 +818,98 @@ function saveOgsSearchSettings() {
   try {
     localStorage.setItem(OGS_SEARCH_STORAGE_KEY, JSON.stringify(settings));
   } catch (_) {}
+}
 
-  renderOgsSearchTimeHint();
+function normalizeStoredSearchSettings(settings) {
+  if (!settings || typeof settings !== "object") {
+    return {
+      sizes: [19],
+      speeds: ["live"],
+      lowerRankDiff: 3,
+      upperRankDiff: 3
+    };
+  }
+
+  // Migrate the previous single-select format without losing the user's choice.
+  const rawSizes = Array.isArray(settings.sizes)
+    ? settings.sizes
+    : settings.size !== undefined
+      ? [settings.size]
+      : [19];
+
+  const rawSpeeds = Array.isArray(settings.speeds)
+    ? settings.speeds
+    : settings.speed !== undefined
+      ? [settings.speed]
+      : ["live"];
+
+  const sizes = rawSizes
+    .map(Number)
+    .filter((value) => OGS_SEARCH_SIZES.includes(value));
+
+  const speeds = rawSpeeds
+    .map(String)
+    .filter((value) => OGS_SEARCH_SPEEDS.includes(value));
+
+  return {
+    sizes: sizes.length ? [...new Set(sizes)] : [19],
+    speeds: speeds.length ? [...new Set(speeds)] : ["live"],
+    lowerRankDiff: clampRankDiff(settings.lowerRankDiff),
+    upperRankDiff: clampRankDiff(settings.upperRankDiff)
+  };
 }
 
 function loadOgsSearchSettings() {
-  let settings = null;
+  let stored = null;
   try {
-    settings = JSON.parse(localStorage.getItem(OGS_SEARCH_STORAGE_KEY) || "null");
+    stored = JSON.parse(localStorage.getItem(OGS_SEARCH_STORAGE_KEY) || "null");
   } catch (_) {}
 
-  if (!settings || typeof settings !== "object") {
-    settings = { size: 19, speed: "live", lowerRankDiff: 3, upperRankDiff: 3 };
-  }
+  const settings = normalizeStoredSearchSettings(stored);
+  setChoiceValues(ogsSearchSizes, "size", settings.sizes);
+  setChoiceValues(ogsSearchSpeeds, "speed", settings.speeds);
 
-  const size = [9, 13, 19].includes(Number(settings.size)) ? Number(settings.size) : 19;
-  const speed = settings.speed === "rapid" ? "rapid" : "live";
-  const lower = clampRankDiff(settings.lowerRankDiff);
-  const upper = clampRankDiff(settings.upperRankDiff);
+  if (ogsSearchLowerRank) ogsSearchLowerRank.value = String(settings.lowerRankDiff);
+  if (ogsSearchUpperRank) ogsSearchUpperRank.value = String(settings.upperRankDiff);
+}
 
-  if (ogsSearchSize) ogsSearchSize.value = String(size);
-  if (ogsSearchSpeed) ogsSearchSpeed.value = speed;
-  if (ogsSearchLowerRank) ogsSearchLowerRank.value = String(lower);
-  if (ogsSearchUpperRank) ogsSearchUpperRank.value = String(upper);
+function toggleOgsSearchChoice(container, attribute, button) {
+  if (!container || !button) return;
 
-  renderOgsSearchTimeHint();
+  const isActive = button.getAttribute("aria-pressed") === "true";
+  const activeButtons = container.querySelectorAll(".ogsChoiceButton[aria-pressed='true']");
+
+  // OGS automatch must always have at least one size and one speed option.
+  if (isActive && activeButtons.length <= 1) return;
+
+  button.classList.toggle("active", !isActive);
+  button.setAttribute("aria-pressed", isActive ? "false" : "true");
+  saveOgsSearchSettings();
 }
 
 function automatchPreferences() {
   const settings = currentOgsSearchSettings();
+  const sizeSpeedOptions = [];
+
+  for (const size of settings.sizes) {
+    for (const speed of settings.speeds) {
+      sizeSpeedOptions.push({
+        size: size + "x" + size,
+        speed,
+        system: "byoyomi"
+      });
+    }
+  }
+
+  // The official OGS client also shuffles multiple combinations to avoid
+  // consistently biasing matching toward the first selected option.
+  if (sizeSpeedOptions.length > 1) {
+    sizeSpeedOptions.sort(() => Math.random() - 0.5);
+  }
 
   return {
     uuid: makeUuid(),
-    size_speed_options: [
-      {
-        size: settings.size + "x" + settings.size,
-        speed: settings.speed,
-        system: "byoyomi"
-      }
-    ],
+    size_speed_options: sizeSpeedOptions,
     lower_rank_diff: settings.lowerRankDiff,
     upper_rank_diff: settings.upperRankDiff,
     rules: { condition: "required", value: "japanese" },
@@ -891,17 +940,16 @@ function startAutomatch() {
   saveOgsSearchSettings();
   const settings = currentOgsSearchSettings();
   const preferences = automatchPreferences();
-  const preset = OGS_BYOYOMI_PRESETS[settings.size][settings.speed];
 
   activeAutomatchUuid = preferences.uuid;
   wsSend("automatch/find_match", preferences);
   setSearchState(
     true,
     "Ищем соперника: " +
-      settings.size + "×" + settings.size +
-      " · Japanese · " +
-      (settings.speed === "rapid" ? "Rapid" : "Live") +
-      " · " + preset.main + " мин + " + preset.periods + "×" + preset.period + " сек" +
+      settings.sizes.map((size) => size + "×" + size).join(", ") +
+      " · " +
+      settings.speeds.map((speed) => speed === "rapid" ? "Rapid" : "Live").join(", ") +
+      " · Japanese · byo-yomi" +
       " · ранг −" + settings.lowerRankDiff + "/+" + settings.upperRankDiff + "."
   );
 }
@@ -1797,7 +1845,21 @@ if (ogsChallengePlayerUrl && OGS.defaultChallengePlayerUrl) {
 
 loadOgsSearchSettings();
 
-[ogsSearchSize, ogsSearchSpeed, ogsSearchLowerRank, ogsSearchUpperRank]
+if (ogsSearchSizes) {
+  ogsSearchSizes.addEventListener("click", (event) => {
+    const button = event.target.closest(".ogsChoiceButton[data-size]");
+    if (button) toggleOgsSearchChoice(ogsSearchSizes, "size", button);
+  });
+}
+
+if (ogsSearchSpeeds) {
+  ogsSearchSpeeds.addEventListener("click", (event) => {
+    const button = event.target.closest(".ogsChoiceButton[data-speed]");
+    if (button) toggleOgsSearchChoice(ogsSearchSpeeds, "speed", button);
+  });
+}
+
+[ogsSearchLowerRank, ogsSearchUpperRank]
   .filter(Boolean)
   .forEach((element) => {
     element.addEventListener("change", saveOgsSearchSettings);
