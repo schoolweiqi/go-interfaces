@@ -124,6 +124,18 @@
           </div>
         </section>
 
+        <section class="panel josekiPanel">
+          <h2 class="panelHeading">
+            <button class="panelToggle" type="button" aria-expanded="false" aria-controls="josekiPanelBody">
+              Джосеки
+            </button>
+          </h2>
+          <div id="josekiPanelBody" class="panelBody" hidden>
+            <button id="activateJoseki" type="button">Активировать</button>
+            <div id="josekiStatus" class="networkStatus">Источник: OGS Joseki Explorer · позиция 15081.</div>
+          </div>
+        </section>
+
         <section class="panel network">
           <h2 class="panelHeading">
             <button class="panelToggle" type="button" aria-expanded="false" aria-controls="networkPanelBody">
@@ -271,6 +283,7 @@
   <script src="sgf.js"></script>
   <script src="tree.js"></script>
   <script src="ui.js"></script>
+  <script src="joseki.js"></script>
   <script src="review.js"></script>
   <script src="app.js"></script>
 </body>
