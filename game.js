@@ -292,7 +292,12 @@ class GoBoard {
           this.lastMove = { x, y, stone };
           this.positionHistory.push(afterKey);
           if (typeof this.updateFogExploration === 'function') this.updateFogExploration();
-          if (draw) this.draw();
+          if (draw) {
+            this.draw();
+            if (window.stoneSound && typeof window.stoneSound.play === 'function') {
+              window.stoneSound.play();
+            }
+          }
           return { ok: true, captured };
         }
 

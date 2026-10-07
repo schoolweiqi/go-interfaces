@@ -70,6 +70,15 @@
       updateTurn();
       updateCaptures();
       board.draw();
+      if (
+        hasNewMove &&
+        state.lastMove &&
+        !state.lastMove.pass &&
+        window.stoneSound &&
+        typeof window.stoneSound.play === 'function'
+      ) {
+        window.stoneSound.play();
+      }
 
       const myTurn = networkGame.color === turn && state.status === 'playing';
       if (

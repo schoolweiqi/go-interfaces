@@ -61,6 +61,100 @@ window.movePause = (() => {
   };
 })();
 
+// Sound of placing a Go stone. Synthesized locally with Web Audio so the
+// project does not depend on an external audio asset.
+window.stoneSound = (() => {
+  let context = null;
+  let volume = 5;
+
+  function getContext() {
+    if (!context) {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) return null;
+      context = new AudioContextClass();
+    }
+    return context;
+  }
+
+  function setVolume(value) {
+    const numeric = Number(value);
+    volume = Math.max(0, Math.min(10, Number.isFinite(numeric) ? Math.round(numeric) : 5));
+    return volume;
+  }
+
+  function play() {
+    if (volume <= 0) return;
+
+    const ctx = getContext();
+    if (!ctx) return;
+
+    const start = () => {
+      const now = ctx.currentTime;
+      const gain = ctx.createGain();
+      const master = Math.pow(volume / 10, 1.35);
+
+      // Short low wooden impact.
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(235, now);
+      osc.frequency.exponentialRampToValueAtTime(115, now + 0.045);
+
+      const impactGain = ctx.createGain();
+      impactGain.gain.setValueAtTime(0.0001, now);
+      impactGain.gain.exponentialRampToValueAtTime(0.42 * master, now + 0.002);
+      impactGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.075);
+
+      // A tiny filtered noise transient gives the stone a dry "click".
+      const length = Math.max(1, Math.floor(ctx.sampleRate * 0.035));
+      const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < length; i++) {
+        const envelope = 1 - i / length;
+        data[i] = (Math.random() * 2 - 1) * envelope;
+      }
+
+      const noise = ctx.createBufferSource();
+      noise.buffer = buffer;
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.value = 1450;
+      filter.Q.value = 0.7;
+
+      const noiseGain = ctx.createGain();
+      noiseGain.gain.setValueAtTime(0.24 * master, now);
+      noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.035);
+
+      gain.gain.value = 0.9;
+      osc.connect(impactGain).connect(gain);
+      noise.connect(filter).connect(noiseGain).connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 0.08);
+      noise.start(now);
+      noise.stop(now + 0.04);
+    };
+
+    if (ctx.state === 'suspended') {
+      ctx.resume().then(start).catch(() => {});
+    } else {
+      start();
+    }
+  }
+
+  // Resume audio as soon as the browser receives a genuine user gesture.
+  document.addEventListener('pointerdown', () => {
+    const ctx = getContext();
+    if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => {});
+  }, { once: true, passive: true });
+
+  return {
+    get volume() { return volume; },
+    setVolume,
+    play
+  };
+})();
+
     const board = new GoBoard(document.getElementById('board'), 19);
     window.goBoardInstance = board;
     const boardCleanBtn = document.getElementById('boardClean');
@@ -75,6 +169,7 @@ window.movePause = (() => {
     const influenceStonePointClampInput = document.getElementById('influenceStonePointClamp');
     const influenceNumbersInput = document.getElementById('influenceNumbers');
     const movePauseSecondsInput = document.getElementById('movePauseSeconds');
+    const stoneSoundVolumeInput = document.getElementById('stoneSoundVolume');
 
     boardCleanBtn.addEventListener('click', () => {
       board.setCleanVisible(!board.showClean);
@@ -125,6 +220,11 @@ window.movePause = (() => {
     movePauseSecondsInput.addEventListener('input', () => {
       window.movePause.setDelay(movePauseSecondsInput.value);
       movePauseSecondsInput.value = String(window.movePause.delaySeconds);
+    });
+
+    window.stoneSound.setVolume(stoneSoundVolumeInput.value);
+    stoneSoundVolumeInput.addEventListener('input', () => {
+      stoneSoundVolumeInput.value = String(window.stoneSound.setVolume(stoneSoundVolumeInput.value));
     });
     const sizeSelect = document.getElementById('size');
     const speedSelect = document.getElementById('speed');

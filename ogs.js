@@ -1222,6 +1222,9 @@ function applyOgsMoveEvent(data) {
   turn = ogsGame.nextMoveColor;
 
   board.draw();
+  if (!(move.pass || move.x < 0 || move.y < 0) && window.stoneSound && typeof window.stoneSound.play === "function") {
+    window.stoneSound.play();
+  }
   updateTurn();
   updateCaptures();
 
