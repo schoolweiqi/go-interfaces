@@ -21,6 +21,12 @@
   }
 
   logo.addEventListener('click', open);
+  logo.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      open();
+    }
+  });
   closeButton.addEventListener('click', close);
 
   modal.addEventListener('click', (event) => {
