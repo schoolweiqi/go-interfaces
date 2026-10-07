@@ -1846,16 +1846,24 @@ if (ogsChallengePlayerUrl && OGS.defaultChallengePlayerUrl) {
 loadOgsSearchSettings();
 
 if (ogsSearchSizes) {
-  ogsSearchSizes.addEventListener("click", (event) => {
-    const button = event.target.closest(".ogsChoiceButton[data-size]");
-    if (button) toggleOgsSearchChoice(ogsSearchSizes, "size", button);
+  ogsSearchSizes.querySelectorAll(".ogsChoiceButton[data-size]").forEach((button) => {
+    button.disabled = false;
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleOgsSearchChoice(ogsSearchSizes, "size", button);
+    });
   });
 }
 
 if (ogsSearchSpeeds) {
-  ogsSearchSpeeds.addEventListener("click", (event) => {
-    const button = event.target.closest(".ogsChoiceButton[data-speed]");
-    if (button) toggleOgsSearchChoice(ogsSearchSpeeds, "speed", button);
+  ogsSearchSpeeds.querySelectorAll(".ogsChoiceButton[data-speed]").forEach((button) => {
+    button.disabled = false;
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleOgsSearchChoice(ogsSearchSpeeds, "speed", button);
+    });
   });
 }
 
