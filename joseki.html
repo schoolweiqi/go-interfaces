@@ -20,6 +20,29 @@
         <button id="studyJoseki" type="button" disabled>Изучить</button>
         <button id="finishJosekiStudy" class="secondary" type="button" hidden>Завершить обучение</button>
 
+        <label for="josekiRepetitions">Количество повторений
+          <input id="josekiRepetitions" type="number" min="6" max="100" step="1" value="6">
+        </label>
+
+        <section class="panel modesPanel">
+          <h2 class="panelHeading">
+            <button class="panelToggle" type="button" aria-expanded="false" aria-controls="josekiModesPanelBody">
+              Режим отображения
+            </button>
+          </h2>
+          <div id="josekiModesPanelBody" class="panelBody" hidden>
+            <div class="boardModes" aria-label="Режимы отображения доски">
+              <button id="boardClean" type="button">чистое поле</button>
+              <button id="boardFaces" type="button">лица</button>
+              <button id="boardLinks" type="button">связи</button>
+              <button id="boardInfluence" type="button">влияние</button>
+              <button id="boardPhantom" type="button">фантом</button>
+              <button id="boardFog" type="button">туман</button>
+              <button id="boardPause" type="button">пауза</button>
+            </div>
+          </div>
+        </section>
+
         <div id="josekiStudyStatus" class="networkStatus" hidden></div>
 
         <div id="josekiStatus" class="networkStatus">
@@ -37,12 +60,13 @@
     </main>
   </div>
 
+  <script src="accordion.js"></script>
   <script src="game.js"></script>
   <script src="influence.js"></script>
   <script src="faces.js"></script>
   <script src="board.js"></script>
   <script src="sgf.js"></script>
   <script src="tree.js"></script>
-  <script src="joseki-page.js?v=20261007-5"></script>
+  <script src="joseki-page.js?v=20261007-6"></script>
 </body>
 </html>
