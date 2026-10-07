@@ -3,7 +3,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-const ROOT_ID = 1;
+// Full Josekipedia graph refresh entry point.\nconst ROOT_ID = 1;
 const BASE_URL = "https://www.josekipedia.com/db/node.php";
 const OUT_FILE = path.resolve("data/joseki/josekipedia.json");
 const CONCURRENCY = Number(process.env.JOSEKIPEDIA_CONCURRENCY || 8);
