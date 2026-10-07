@@ -445,6 +445,41 @@ canvas {
 }
 .ogsAuthActions { margin-bottom: 4px; }
 .ogsAuthActions button { margin-bottom: 0; }
+.ogsSearchSettings {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  margin: 8px 0 10px;
+  border: 1px solid #34383d;
+  border-radius: 8px;
+  background: #17191b;
+}
+.ogsSearchSettingsTitle {
+  font-size: 11px;
+  font-weight: 700;
+  color: #e2e5e8;
+}
+.ogsSearchSettings label {
+  margin: 0;
+  font-size: 11px;
+}
+.ogsSearchSettings select,
+.ogsSearchSettings input {
+  margin: 4px 0 0;
+  min-height: 34px;
+  font-size: 12px;
+}
+.ogsRankRange {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.ogsSearchTimeHint {
+  min-height: 16px;
+  color: #9ca3aa;
+  font-size: 10px;
+  line-height: 1.35;
+}
 .ogsPlayerLinkLabel {
   display: block;
   margin: 7px 0 4px;
