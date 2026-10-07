@@ -35,8 +35,6 @@ GoBoard.prototype.handlePhantomPointerMove = function(event) {
         let next = null;
 
         if (x >= 0 && y >= 0 && x < this.size && y < this.size) {
-          // Предпросмотр появляется только если курсор действительно находится
-          // возле перекрёстка, а не просто внутри его большой квадратной ячейки.
           const px = pad + x * step;
           const py = pad + y * step;
           const distance = Math.hypot(localX - px, localY - py);
@@ -95,8 +93,19 @@ GoBoard.prototype.drawJosekiChoices = function(pad, step) {
           const cx = pad + choice.x * step;
           const cy = pad + choice.y * step;
           const category = String(choice.category || '').toUpperCase();
-          const fill = colors[category] || '#355d8a';
           const radius = Math.max(6, step * 0.27);
+
+          if (category === 'STUDY_HINT') {
+            c.beginPath();
+            c.arc(cx, cy, Math.max(7, step * 0.31), 0, Math.PI * 2);
+            c.globalAlpha = 1;
+            c.lineWidth = Math.max(2, step * 0.06);
+            c.strokeStyle = '#2b78d0';
+            c.stroke();
+            continue;
+          }
+
+          const fill = colors[category] || '#355d8a';
 
           c.beginPath();
           c.arc(cx, cy, radius, 0, Math.PI * 2);
@@ -138,14 +147,6 @@ GoBoard.prototype.metrics = function() {
 GoBoard.prototype.draw = function() {
         if (!this.ctx) return;
 
-        /*
-         * В режиме "фантом" временно подменяем this.stones результатом
-         * предполагаемого хода. Поэтому все существующие алгоритмы — влияние,
-         * лица, связи и группы — автоматически рассчитываются уже для позиции
-         * ПОСЛЕ этого хода.
-         *
-         * После синхронной отрисовки состояние доски обязательно возвращается.
-         */
         let phantomPreview = null;
         let realStones = null;
         let realPositionHistory = null;
@@ -177,8 +178,6 @@ GoBoard.prototype.draw = function() {
         c.fillStyle = wood;
         c.fillRect(0, 0, cssSize, cssSize);
 
-        // В оригинальном Influencie heatmap рисуется поверх доски,
-        // но под линиями и камнями.
         this.drawInfluenceHeatmap(pad, step);
 
         const showGrid = !this.showClean;
@@ -245,13 +244,6 @@ GoBoard.prototype.draw = function() {
         this.drawInfluenceNumbers(pad, step);
         this.drawJosekiChoices(pad, step);
 
-        /*
-         * В режимах "связи" и "лица" предполагаемый камень может сливаться
-         * с общей формой группы. Поэтому поверх результата рисуем тонкое
-         * пунктирное кольцо, обозначающее точку предполагаемой постановки.
-         *
-         * Если ход недопустим, вместо позиции показываем красный крест.
-         */
         if (this.showPhantom && this.phantomHover) {
           const hx = pad + this.phantomHover.x * step;
           const hy = pad + this.phantomHover.y * step;
@@ -278,11 +270,8 @@ GoBoard.prototype.draw = function() {
           c.restore();
         }
 
-        // Туман рисуется последним, чтобы скрывать и камни, и подсказки,
-        // и влияние за пределами уже разведанной области.
         this.drawFogOverlay(pad, step, cssSize);
 
-        // Возвращаем настоящее игровое состояние после фантомной отрисовки.
         if (realStones) {
           this.stones = realStones;
           this.positionHistory = realPositionHistory;
@@ -293,7 +282,7 @@ GoBoard.prototype.drawCoordinates = function(pad, step, cssSize, color = '#2d211
         const c = this.ctx;
         const letters = [];
         for (let x = 0; x < this.size; x++) {
-          const code = 65 + x + (x >= 8 ? 1 : 0); // В координатах Го буква I пропускается.
+          const code = 65 + x + (x >= 8 ? 1 : 0);
           letters.push(String.fromCharCode(code));
         }
 
@@ -356,7 +345,6 @@ GoBoard.prototype.drawLastMoveMarker = function(pad, step) {
         const c = this.ctx;
         const cx = pad + x * step;
         const cy = pad + y * step;
-        // Тонкое зелёное кольцо идёт почти по внешней границе обычного камня.
         const radius = step * 0.435;
         c.save();
         c.beginPath();
