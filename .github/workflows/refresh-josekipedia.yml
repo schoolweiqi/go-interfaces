@@ -7,51 +7,89 @@ on:
     paths:
       - "scripts/fetch-josekipedia.mjs"
       - ".github/workflows/refresh-josekipedia.yml"
+      - "data/joseki/josekipedia/state.json"
 
 permissions:
   contents: write
+  actions: write
+
+concurrency:
+  group: josekipedia-refresh
+  cancel-in-progress: false
 
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 110
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Use Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "22"
 
-      - name: Fetch full Josekipedia graph
+      - name: Fetch next Josekipedia batch
         env:
           JOSEKIPEDIA_CONCURRENCY: "8"
           JOSEKIPEDIA_RETRIES: "6"
           JOSEKIPEDIA_TIMEOUT_MS: "20000"
+          JOSEKIPEDIA_MAX_NODES_PER_RUN: "40000"
         run: node scripts/fetch-josekipedia.mjs
 
-      - name: Verify database
+      - name: Verify checkpoint
         run: |
           set -euo pipefail
-          test -s data/joseki/josekipedia.json
+          test -s data/joseki/josekipedia/manifest.json
+          test -s data/joseki/josekipedia/state.json
           node - <<'NODE'
           const fs = require("fs");
-          const db = JSON.parse(fs.readFileSync("data/joseki/josekipedia.json", "utf8"));
-          if (!db.nodes || !db.nodes["1"]) throw new Error("Josekipedia root node is missing");
-          if (!Number.isFinite(db.nodeCount) || db.nodeCount < 1000) throw new Error("Josekipedia dump is unexpectedly small");
-          console.log("Josekipedia nodes:", db.nodeCount);
+          const manifest = JSON.parse(fs.readFileSync("data/joseki/josekipedia/manifest.json", "utf8"));
+          const state = JSON.parse(fs.readFileSync("data/joseki/josekipedia/state.json", "utf8"));
+          if (!Number.isFinite(manifest.nodeCount) || manifest.nodeCount < 1000) throw new Error("Josekipedia checkpoint is unexpectedly small");
+          if (!Array.isArray(state.queue)) throw new Error("Josekipedia queue missing");
+          console.log("Josekipedia nodes:", manifest.nodeCount);
+          console.log("Queue:", state.queue.length);
+          console.log("Complete:", manifest.complete);
           NODE
 
-      - name: Commit database
+      - name: Commit checkpoint
+        id: commit
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/joseki/josekipedia.json
+
+          git add data/joseki/josekipedia
           if git diff --cached --quiet; then
-            echo "Josekipedia database already up to date"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No Josekipedia checkpoint changes"
             exit 0
           fi
-          git commit -m "Refresh local Josekipedia database"
+
+          git commit -m "Continue Josekipedia database crawl"
+          git pull --rebase origin main
           git push
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Read completion state
+        id: state
+        run: |
+          node - <<'NODE' >> "$GITHUB_OUTPUT"
+          const fs = require("fs");
+          const state = JSON.parse(fs.readFileSync("data/joseki/josekipedia/state.json", "utf8"));
+          console.log("complete=" + (state.complete ? "true" : "false"));
+          console.log("queue=" + (Array.isArray(state.queue) ? state.queue.length : -1));
+          NODE
+
+      - name: Trigger next batch
+        if: steps.state.outputs.complete != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "Josekipedia crawl incomplete; queue=${{ steps.state.outputs.queue }}"
+          gh workflow run refresh-josekipedia.yml --ref main
