@@ -451,23 +451,24 @@ canvas {
   margin: 8px 0 10px;
 }
 .ogsChoiceRow {
-  display: grid;
+  display: flex;
+  flex-wrap: nowrap;
   gap: 6px;
   width: 100%;
-}
-.ogsChoiceRowSizes {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-.ogsChoiceRowSpeeds {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-.ogsChoiceButton {
   min-width: 0;
+}
+.ogsChoiceRow .ogsChoiceButton {
+  flex: 1 1 0;
+  width: 0;
+  min-width: 0;
+  max-width: none;
   min-height: 34px;
   margin: 0;
-  padding: 7px 6px;
+  padding: 7px 4px;
   font-size: 11px;
   white-space: nowrap;
+  pointer-events: auto;
+  touch-action: manipulation;
 }
 .ogsChoiceButton.active,
 .ogsChoiceButton[aria-pressed="true"] {
