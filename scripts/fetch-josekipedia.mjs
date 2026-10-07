@@ -122,7 +122,9 @@ async function main() {
       nodes.set(id, compact);
       processed += 1;
 
-      for (const edge of [...compact.children, ...compact.ghosts]) {
+      // Only _children are real Josekipedia tree branches.
+      // _ghosts are UI suggestions/placeholders and must not be crawled recursively.
+      for (const edge of compact.children) {
         if (visited.has(edge.id) || queued.has(edge.id)) continue;
         queue.push(edge.id);
         queued.add(edge.id);
