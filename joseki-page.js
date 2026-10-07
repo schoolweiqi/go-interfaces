@@ -155,29 +155,25 @@ async function getNode(id) {
     return node;
   }
 
-  const node = await fetchLiveNode(id);
-  nodeCache.set(key, node);
-  return node;
+  return null;
 }
 
 async function loadJosekipediaSource() {
   localDb = null;
   nodeCache.clear();
 
-  try {
-    const response = await fetch(JOSEKIPEDIA_DB_URL, { cache: "no-store" });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const db = await response.json();
-    if (!db?.nodes?.["1"]) throw new Error("В локальной базе нет корневого узла.");
-    localDb = db;
-    sourceMode = "local";
-    return;
-  } catch (_) {
-    sourceMode = "live";
-    const root = await fetchLiveNode(1);
-    if (!root) throw new Error("Не удалось загрузить корневой узел Josekipedia.");
-    nodeCache.set("1", root);
+  const response = await fetch(JOSEKIPEDIA_DB_URL, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`Локальная база Josekipedia недоступна: HTTP ${response.status}`);
   }
+
+  const db = await response.json();
+  if (!db?.nodes?.["1"]) {
+    throw new Error("В локальной базе Josekipedia нет корневого узла.");
+  }
+
+  localDb = db;
+  sourceMode = "local";
 }
 
 function resetBoard() {
@@ -239,6 +235,8 @@ async function buildChoicesForNode(node) {
   const byPoint = new Map();
 
   for (const edge of rawEdges) {
+    if (localDb && !localDb.nodes?.[String(edge.id)]) continue;
+
     let move = edge.move ? { ...edge.move } : null;
 
     if (!move && localDb?.nodes?.[String(edge.id)]) {
@@ -289,6 +287,15 @@ async function refreshChoices() {
   }
 
   const node = await getNode(browse.currentId);
+
+  if (!node) {
+    browse.choices = [];
+    board.setJosekiChoices([]);
+    status.textContent = "Для этой ветки пока нет локальных данных Josekipedia.";
+    updateStudyAvailability();
+    return;
+  }
+
   browse.choices = await buildChoicesForNode(node);
 
   board.setJosekiChoices(
