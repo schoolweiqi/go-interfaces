@@ -5,7 +5,7 @@
 const JOSEKI_LIBRARY_NAME = "Josekipedia";
 const JOSEKIPEDIA_DB_URL = "data/joseki/josekipedia.json?v=20261007-1";
 const JOSEKIPEDIA_NODE_URL = "https://www.josekipedia.com/db/node.php";
-const STUDY_ROUND_COUNT = 6;
+let STUDY_ROUND_COUNT = 6;
 
 const TYPE_NAMES = {
   0: "IDEAL",
@@ -21,6 +21,30 @@ const studyButton = document.getElementById("studyJoseki");
 const finishStudyButton = document.getElementById("finishJosekiStudy");
 const status = document.getElementById("josekiStatus");
 const studyStatus = document.getElementById("josekiStudyStatus");
+const repetitionsInput = document.getElementById("josekiRepetitions");
+const boardCleanBtn = document.getElementById("boardClean");
+const boardFacesBtn = document.getElementById("boardFaces");
+const boardLinksBtn = document.getElementById("boardLinks");
+const boardInfluenceBtn = document.getElementById("boardInfluence");
+const boardPhantomBtn = document.getElementById("boardPhantom");
+const boardFogBtn = document.getElementById("boardFog");
+const boardPauseBtn = document.getElementById("boardPause");
+
+const josekiPause = {
+  enabled: false,
+  lockedUntil: 0,
+  delayMs: 1000,
+  isLocked() {
+    return this.enabled && Date.now() < this.lockedUntil;
+  },
+  arm() {
+    if (!this.enabled) return;
+    this.lockedUntil = Date.now() + this.delayMs;
+  },
+  clear() {
+    this.lockedUntil = 0;
+  }
+};
 
 let active = false;
 let localDb = null;
@@ -494,6 +518,12 @@ function setStudyHintForCurrentMove() {
   }]);
 }
 
+function clampRepetitionCount(value) {
+  const numeric = Number(value);
+  const rounded = Number.isFinite(numeric) ? Math.round(numeric) : 6;
+  return Math.max(6, Math.min(100, rounded));
+}
+
 function updateStudyStatus(extra = "") {
   if (!studyStatus || !study.active) return;
 
@@ -522,7 +552,7 @@ function finishStudyRoundIfDone() {
     study.transitioning = false;
     board.setJosekiChoices([]);
     if (finishStudyButton) finishStudyButton.hidden = false;
-    updateStudyStatus("Все шесть повторений пройдены успешно. Нажмите «Завершить обучение».");
+    updateStudyStatus(`Все ${STUDY_ROUND_COUNT} повторений пройдены успешно. Нажмите «Завершить обучение».`);
     board.draw();
     return true;
   }
@@ -620,6 +650,7 @@ function handleStudyIntersection(x, y) {
   }
 
   study.moveIndex += 1;
+  josekiPause.arm();
   setStudyHintForCurrentMove();
   board.draw();
 
@@ -631,24 +662,29 @@ function handleStudyIntersection(x, y) {
 function buildStudyRounds() {
   const firstRole = roleForColor(study.sourceStartColor);
   const secondRole = roleForColor(oppositeColor(study.sourceStartColor));
-  const randomStarts = shuffled([
-    1,
-    2,
-    Math.random() < 0.5 ? 1 : 2
-  ]);
 
-  return [
+  const rounds = [
     { role: firstRole, corner: study.sourceCorner, startColor: study.sourceStartColor },
     { role: secondRole, corner: study.sourceCorner, startColor: study.sourceStartColor },
-    { role: "both", corner: study.sourceCorner, startColor: study.sourceStartColor },
-    { role: randomRole(), corner: randomCorner(), startColor: randomStarts[0] },
-    { role: randomRole(), corner: randomCorner(), startColor: randomStarts[1] },
-    { role: randomRole(), corner: randomCorner(), startColor: randomStarts[2] }
+    { role: "both", corner: study.sourceCorner, startColor: study.sourceStartColor }
   ];
+
+  while (rounds.length < STUDY_ROUND_COUNT) {
+    rounds.push({
+      role: randomRole(),
+      corner: randomCorner(),
+      startColor: Math.random() < 0.5 ? 1 : 2
+    });
+  }
+
+  return rounds;
 }
 
 function startStudy() {
   if (!active || study.active) return;
+
+  STUDY_ROUND_COUNT = clampRepetitionCount(repetitionsInput?.value);
+  if (repetitionsInput) repetitionsInput.value = String(STUDY_ROUND_COUNT);
 
   const sequence = currentSequence();
   if (!sequence.length) {
@@ -779,6 +815,8 @@ if (finishStudyButton) {
 }
 
 board.onIntersection = (x, y) => {
+  if (josekiPause.isLocked()) return;
+
   if (study.active) {
     handleStudyIntersection(x, y);
     return;
@@ -786,6 +824,7 @@ board.onIntersection = (x, y) => {
 
   if (!active) return;
 
+  josekiPause.arm();
   chooseAt(x, y).catch(error => {
     status.textContent = `Ошибка Josekipedia: ${error.message}`;
   });
@@ -822,3 +861,35 @@ board.canvas.addEventListener("wheel", event => {
 
 updateStudyAvailability();
 requestAnimationFrame(() => board.draw());
+
+
+if (repetitionsInput) {
+  repetitionsInput.addEventListener("change", () => {
+    const value = clampRepetitionCount(repetitionsInput.value);
+    repetitionsInput.value = String(value);
+    if (!study.active) STUDY_ROUND_COUNT = value;
+  });
+}
+
+function bindModeButton(button, getter, setter) {
+  if (!button) return;
+  button.addEventListener("click", () => {
+    setter(!getter());
+    button.classList.toggle("active", getter());
+  });
+}
+
+bindModeButton(boardCleanBtn, () => board.showClean, value => board.setCleanVisible(value));
+bindModeButton(boardFacesBtn, () => board.showFaces, value => board.setFacesVisible(value));
+bindModeButton(boardLinksBtn, () => board.showLinks, value => board.setLinksVisible(value));
+bindModeButton(boardInfluenceBtn, () => board.showInfluence, value => board.setInfluenceVisible(value));
+bindModeButton(boardPhantomBtn, () => board.showPhantom, value => board.setPhantomVisible(value));
+bindModeButton(boardFogBtn, () => board.showFog, value => board.setFogVisible(value));
+
+if (boardPauseBtn) {
+  boardPauseBtn.addEventListener("click", () => {
+    josekiPause.enabled = !josekiPause.enabled;
+    if (!josekiPause.enabled) josekiPause.clear();
+    boardPauseBtn.classList.toggle("active", josekiPause.enabled);
+  });
+}
