@@ -1,8 +1,9 @@
-// Local joseki library loader and study mode.
+// Local joseki library loader.
 // Primary source: Kogo's Joseki Dictionary stored in this repository.
+// No live requests to OGS are made during activation.
 
 const JOSEKI_LIBRARY_NAME = "Kogo's Joseki Dictionary";
-const LOCAL_JOSEKI_SGF_URL = "data/joseki/Kogo%27s%20Joseki%20Dictionary.sgf?v=20261007-2";
+const LOCAL_JOSEKI_SGF_URL = "data/joseki/Kogo%27s%20Joseki%20Dictionary.sgf?v=20261007-1";
 
 function extractSgfComment(rawNode) {
   if (!rawNode || !rawNode.C || !rawNode.C.length) return "";
@@ -44,13 +45,18 @@ function applyKogoNodeMetadata(treeNode, rawNode, size) {
 
   treeNode.josekiMeta = {
     ...(treeNode.josekiMeta || {}),
-    inLibrary: true,
     comment: comment || (treeNode.josekiMeta && treeNode.josekiMeta.comment) || "",
     labels: labels.length ? labels : ((treeNode.josekiMeta && treeNode.josekiMeta.labels) || []),
     hasContextSetup
   };
 }
 
+/*
+ * GameTree stores only move nodes, while Kogo also has informational nodes
+ * containing labels/comments without a move. Attach such metadata to the
+ * current GameTree position, so the original A/B/C... choice labels remain
+ * available on our board.
+ */
 function decorateTreeFromKogoSgf(rawTree, gameTree) {
   const queue = [{ rawTree, treeNode: gameTree.root }];
 
@@ -88,431 +94,35 @@ async function loadLocalJosekiSgf() {
   }
 
   const sgf = await response.text();
+
+  // Защита от старого закэшированного OGS-файла. Раньше он содержал
+  // координаты вроде "ot", которые не являются точками доски 19×19.
   if (!/GN\[Kogo's Joseki Dictionary\]/i.test(sgf)) {
     throw new Error("Загружена не Kogo's Joseki Dictionary. Обновите страницу без кэша.");
   }
+
   return sgf;
-}
-
-function getCurrentJosekiSequence() {
-  const gameTree = window.goGameTree;
-  if (!gameTree || gameTree.current === gameTree.root) return [];
-
-  const path = gameTree.pathTo(gameTree.current);
-  if (!path.length || path.some(node => !node.josekiMeta?.inLibrary)) return [];
-
-  return path.map(node => ({
-    color: Number(node.move.color),
-    pass: Boolean(node.move.pass),
-    x: node.move.pass ? null : Number(node.move.x),
-    y: node.move.pass ? null : Number(node.move.y)
-  }));
-}
-
-function detectSequenceCorner(sequence, size = 19) {
-  const points = sequence.filter(move => !move.pass);
-  if (!points.length) return "TR";
-
-  const avgX = points.reduce((sum, move) => sum + move.x, 0) / points.length;
-  const avgY = points.reduce((sum, move) => sum + move.y, 0) / points.length;
-
-  return (avgY < (size - 1) / 2 ? "T" : "B") +
-         (avgX < (size - 1) / 2 ? "L" : "R");
-}
-
-function transformPointToCorner(x, y, fromCorner, toCorner, size = 19) {
-  let tx = x;
-  let ty = y;
-
-  if (fromCorner[1] !== toCorner[1]) tx = size - 1 - tx;
-  if (fromCorner[0] !== toCorner[0]) ty = size - 1 - ty;
-
-  return { x: tx, y: ty };
-}
-
-function transformSequenceToCorner(sequence, fromCorner, toCorner, size = 19) {
-  return sequence.map(move => {
-    if (move.pass) return { ...move };
-    const point = transformPointToCorner(move.x, move.y, fromCorner, toCorner, size);
-    return { ...move, ...point };
-  });
-}
-
-function randomStudyRole() {
-  const roles = ["black", "white"];
-  return roles[Math.floor(Math.random() * roles.length)];
-}
-
-function randomCorner() {
-  const corners = ["TL", "TR", "BL", "BR"];
-  return corners[Math.floor(Math.random() * corners.length)];
-}
-
-function roleLabel(role) {
-  if (role === "black") return "играйте чёрными";
-  if (role === "white") return "играйте белыми";
-  return "играйте за оба цвета";
-}
-
-function cornerLabel(corner) {
-  return ({ TL: "левый верхний", TR: "правый верхний", BL: "левый нижний", BR: "правый нижний" })[corner] || corner;
-}
-
-const josekiStudy = {
-  active: false,
-  sequence: [],
-  sourceCorner: "TR",
-  rounds: [],
-  roundIndex: 0,
-  moveIndex: 0,
-  savedTreeNode: null,
-  originalBoardClick: null
-};
-
-function isHumanStudyMove(move, role) {
-  if (role === "both") return true;
-  return role === "black" ? move.color === 1 : move.color === 2;
-}
-
-function clearStudyBoard() {
-  const board = window.goBoardInstance;
-  if (!board) return;
-  board.setSize(19);
-  board.sgfKomi = 0;
-  board.sgfSetup = { black: [], white: [] };
-  board.setJosekiChoices([]);
-  board.draw();
-}
-
-function applyStudyMove(move) {
-  const board = window.goBoardInstance;
-  if (!board) return false;
-
-  if (move.pass) {
-    board.playPass(move.color, false);
-    return true;
-  }
-
-  const result = board.playStone(move.x, move.y, move.color, false);
-  return Boolean(result && result.ok);
-}
-
-function updateStudyStatus(extra = "") {
-  const status = document.getElementById("josekiStudyStatus");
-  if (!status || !josekiStudy.active) return;
-
-  const round = josekiStudy.rounds[josekiStudy.roundIndex];
-  if (!round) {
-    status.textContent = extra || "Все шесть повторений выполнены.";
-    return;
-  }
-
-  const prefix =
-    `Повторение ${josekiStudy.roundIndex + 1} из 6 · ${roleLabel(round.role)} · ${cornerLabel(round.corner)} угол.`;
-  status.textContent = extra ? `${prefix} ${extra}` : prefix;
-}
-
-function finishStudyRoundIfDone() {
-  if (josekiStudy.moveIndex < josekiStudy.sequence.length) return false;
-
-  josekiStudy.roundIndex += 1;
-
-  if (josekiStudy.roundIndex >= josekiStudy.rounds.length) {
-    josekiStudy.moveIndex = josekiStudy.sequence.length;
-    updateStudyStatus("Все шесть повторений пройдены успешно. Нажмите «Завершить обучение».");
-    return true;
-  }
-
-  startStudyRound();
-  return true;
-}
-
-function advanceAutomaticStudyMoves() {
-  if (!josekiStudy.active) return;
-
-  const round = josekiStudy.rounds[josekiStudy.roundIndex];
-  if (!round) return;
-
-  while (josekiStudy.moveIndex < josekiStudy.sequence.length) {
-    const sourceMove = josekiStudy.sequence[josekiStudy.moveIndex];
-    if (isHumanStudyMove(sourceMove, round.role)) break;
-
-    const transformed = sourceMove.pass
-      ? { ...sourceMove }
-      : {
-          ...sourceMove,
-          ...transformPointToCorner(
-            sourceMove.x,
-            sourceMove.y,
-            josekiStudy.sourceCorner,
-            round.corner,
-            19
-          )
-        };
-
-    if (!applyStudyMove(transformed)) {
-      updateStudyStatus("Не удалось воспроизвести автоматический ход.");
-      return;
-    }
-
-    josekiStudy.moveIndex += 1;
-  }
-
-  if (!finishStudyRoundIfDone()) {
-    updateStudyStatus();
-    window.goBoardInstance.draw();
-  }
-}
-
-function startStudyRound() {
-  if (!josekiStudy.active) return;
-
-  josekiStudy.moveIndex = 0;
-  clearStudyBoard();
-  updateStudyStatus();
-  advanceAutomaticStudyMoves();
-}
-
-function handleStudyPass() {
-  if (!josekiStudy.active) return false;
-
-  const round = josekiStudy.rounds[josekiStudy.roundIndex];
-  if (!round) return true;
-
-  const expectedSource = josekiStudy.sequence[josekiStudy.moveIndex];
-  if (!expectedSource) return true;
-
-  if (!isHumanStudyMove(expectedSource, round.role)) {
-    advanceAutomaticStudyMoves();
-    return true;
-  }
-
-  if (!expectedSource.pass) {
-    updateStudyStatus("Сейчас ожидается ход на доске, а не пас.");
-    return true;
-  }
-
-  applyStudyMove(expectedSource);
-  josekiStudy.moveIndex += 1;
-
-  if (!finishStudyRoundIfDone()) {
-    advanceAutomaticStudyMoves();
-  }
-
-  return true;
-}
-
-function handleStudyIntersection(x, y) {
-  if (!josekiStudy.active) return false;
-
-  const round = josekiStudy.rounds[josekiStudy.roundIndex];
-  if (!round) return true;
-
-  const expectedSource = josekiStudy.sequence[josekiStudy.moveIndex];
-  if (!expectedSource) return true;
-
-  if (!isHumanStudyMove(expectedSource, round.role)) {
-    advanceAutomaticStudyMoves();
-    return true;
-  }
-
-  if (expectedSource.pass) {
-    updateStudyStatus("В этой позиции ожидается пас.");
-    return true;
-  }
-
-  const expected = transformPointToCorner(
-    expectedSource.x,
-    expectedSource.y,
-    josekiStudy.sourceCorner,
-    round.corner,
-    19
-  );
-
-  if (x !== expected.x || y !== expected.y) {
-    updateStudyStatus("Неверный ход. Попробуйте ещё раз.");
-    return true;
-  }
-
-  const move = { ...expectedSource, x, y };
-  if (!applyStudyMove(move)) {
-    updateStudyStatus("Этот ход сейчас невозможно поставить.");
-    return true;
-  }
-
-  josekiStudy.moveIndex += 1;
-  window.goBoardInstance.draw();
-
-  if (!finishStudyRoundIfDone()) {
-    advanceAutomaticStudyMoves();
-  }
-
-  return true;
-}
-
-function updateJosekiStudyAvailability() {
-  const studyButton = document.getElementById("studyJoseki");
-  if (!studyButton) return;
-
-  if (!window.josekiModeActive || josekiStudy.active) {
-    studyButton.disabled = true;
-    return;
-  }
-
-  studyButton.disabled = getCurrentJosekiSequence().length === 0;
-}
-
-function findJosekiChildAt(x, y, pass = false) {
-  const gameTree = window.goGameTree;
-  if (!gameTree || !window.josekiModeActive) return null;
-
-  return gameTree.current.children.find(child =>
-    child.josekiMeta?.inLibrary &&
-    Boolean(child.move?.pass) === Boolean(pass) &&
-    (pass || (Number(child.move.x) === Number(x) && Number(child.move.y) === Number(y)))
-  ) || null;
-}
-
-function handleJosekiBrowseIntersection(x, y) {
-  if (!window.josekiModeActive || josekiStudy.active) return false;
-
-  const child = findJosekiChildAt(x, y, false);
-  if (!child) {
-    const status = document.getElementById("josekiStatus");
-    if (status) status.textContent = "Этого хода нет среди продолжений текущей позиции Kogo.";
-    return true;
-  }
-
-  if (typeof window.restoreJosekiTreePosition === "function") {
-    window.restoreJosekiTreePosition(child);
-  }
-  updateJosekiStudyAvailability();
-  return true;
-}
-
-function handleJosekiBrowsePass() {
-  if (!window.josekiModeActive || josekiStudy.active) return false;
-
-  const child = findJosekiChildAt(null, null, true);
-  if (!child) {
-    const status = document.getElementById("josekiStatus");
-    if (status) status.textContent = "Пас не является продолжением текущей позиции Kogo.";
-    return true;
-  }
-
-  if (typeof window.restoreJosekiTreePosition === "function") {
-    window.restoreJosekiTreePosition(child);
-  }
-  updateJosekiStudyAvailability();
-  return true;
-}
-
-function startJosekiStudy() {
-  if (!window.josekiModeActive) return;
-
-  const sequence = getCurrentJosekiSequence();
-  if (!sequence.length) {
-    const status = document.getElementById("josekiStudyStatus");
-    if (status) {
-      status.hidden = false;
-      status.textContent = "Сначала разложите вариант джосеки по подсказкам или выберите его в дереве. Произвольные ходы в режиме джосеки не принимаются.";
-    }
-    updateJosekiStudyAvailability();
-    return;
-  }
-
-  const current = window.goGameTree.current;
-  josekiStudy.savedTreeNode = current;
-  josekiStudy.sequence = sequence;
-  josekiStudy.sourceCorner = detectSequenceCorner(sequence, 19);
-  josekiStudy.roundIndex = 0;
-  josekiStudy.moveIndex = 0;
-  josekiStudy.rounds = [
-    { role: "black", corner: josekiStudy.sourceCorner },
-    { role: "white", corner: josekiStudy.sourceCorner },
-    { role: "both", corner: josekiStudy.sourceCorner },
-    { role: randomStudyRole(), corner: randomCorner() },
-    { role: randomStudyRole(), corner: randomCorner() },
-    { role: randomStudyRole(), corner: randomCorner() }
-  ];
-  josekiStudy.active = true;
-
-  window.josekiStudyActive = true;
-  window.goBoardInstance.setJosekiChoices([]);
-
-  const finishButton = document.getElementById("finishJosekiStudy");
-  const studyButton = document.getElementById("studyJoseki");
-  const studyStatus = document.getElementById("josekiStudyStatus");
-  if (finishButton) finishButton.hidden = false;
-  if (studyButton) studyButton.disabled = true;
-  if (studyStatus) studyStatus.hidden = false;
-
-  startStudyRound();
-}
-
-function finishJosekiStudy() {
-  if (!josekiStudy.active) return;
-
-  josekiStudy.active = false;
-  window.josekiStudyActive = false;
-
-  const finishButton = document.getElementById("finishJosekiStudy");
-  const studyButton = document.getElementById("studyJoseki");
-  const studyStatus = document.getElementById("josekiStudyStatus");
-
-  if (finishButton) finishButton.hidden = true;
-  if (studyButton) studyButton.disabled = !window.josekiModeActive;
-  updateJosekiStudyAvailability();
-  if (studyStatus) {
-    studyStatus.hidden = true;
-    studyStatus.textContent = "";
-  }
-
-  if (
-    josekiStudy.savedTreeNode &&
-    typeof window.restoreJosekiTreePosition === "function"
-  ) {
-    window.restoreJosekiTreePosition(josekiStudy.savedTreeNode);
-  }
-
-  if (typeof window.refreshJosekiChoices === "function") {
-    window.refreshJosekiChoices();
-  }
-}
-
-function deactivateJoseki() {
-  if (josekiStudy.active) finishJosekiStudy();
-
-  window.josekiModeActive = false;
-  window.currentJosekiSgf = null;
-  window.currentJosekiLibraryName = null;
-
-  const board = window.goBoardInstance;
-  if (board && typeof board.setJosekiChoices === "function") board.setJosekiChoices([]);
-
-  const activateButton = document.getElementById("activateJoseki");
-  const studyButton = document.getElementById("studyJoseki");
-  const status = document.getElementById("josekiStatus");
-
-  if (activateButton) activateButton.textContent = "Активировать";
-  if (studyButton) studyButton.disabled = true;
-  if (status) status.textContent = "Источник: Kogo's Joseki Dictionary.";
-  updateJosekiStudyAvailability();
 }
 
 (function setupJosekiPanel() {
   const activateButton = document.getElementById("activateJoseki");
-  const studyButton = document.getElementById("studyJoseki");
-  const finishButton = document.getElementById("finishJosekiStudy");
   const status = document.getElementById("josekiStatus");
-
   if (!activateButton || !status) return;
 
   activateButton.addEventListener("click", async () => {
     if (activateButton.disabled) return;
 
     if (window.josekiModeActive) {
-      deactivateJoseki();
+      window.josekiModeActive = false;
+      window.currentJosekiSgf = null;
+      window.currentJosekiLibraryName = null;
+
+      if (window.goBoardInstance && typeof window.goBoardInstance.setJosekiChoices === "function") {
+        window.goBoardInstance.setJosekiChoices([]);
+      }
+
+      activateButton.textContent = "Активировать";
+      status.textContent = "Источник: Kogo's Joseki Dictionary.";
       return;
     }
 
@@ -546,8 +156,6 @@ function deactivateJoseki() {
 
       const variants = window.goGameTree?.current?.children?.length || 0;
       activateButton.textContent = "Деактивировать";
-      updateJosekiStudyAvailability();
-
       status.textContent =
         `${JOSEKI_LIBRARY_NAME} активирован. В дереве ${result.nodeCount} узлов. ` +
         `В текущей позиции вариантов: ${variants}.`;
@@ -558,14 +166,4 @@ function deactivateJoseki() {
       activateButton.disabled = false;
     }
   });
-
-  if (studyButton) studyButton.addEventListener("click", startJosekiStudy);
-  if (finishButton) finishButton.addEventListener("click", finishJosekiStudy);
 })();
-
-window.handleJosekiBrowseIntersection = handleJosekiBrowseIntersection;
-window.handleJosekiBrowsePass = handleJosekiBrowsePass;
-window.handleJosekiStudyIntersection = handleStudyIntersection;
-window.handleJosekiStudyPass = handleStudyPass;
-window.updateJosekiStudyAvailability = updateJosekiStudyAvailability;
-window.finishJosekiStudy = finishJosekiStudy;
