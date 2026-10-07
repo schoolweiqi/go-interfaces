@@ -124,18 +124,6 @@
           </div>
         </section>
 
-        <section class="panel josekiPanel">
-          <h2 class="panelHeading">
-            <button class="panelToggle" type="button" aria-expanded="false" aria-controls="josekiPanelBody">
-              Джосеки
-            </button>
-          </h2>
-          <div id="josekiPanelBody" class="panelBody" hidden>
-            <button id="activateJoseki" type="button">Активировать</button>
-            <div id="josekiStatus" class="networkStatus">Источник: Kogo's Joseki Dictionary.</div>
-          </div>
-        </section>
-
         <section class="panel network">
           <h2 class="panelHeading">
             <button class="panelToggle" type="button" aria-expanded="false" aria-controls="networkPanelBody">
@@ -234,6 +222,10 @@
           </div>
         </section>
 
+        <button id="openJosekiPage" class="secondary sidebarPageButton" type="button" onclick="location.href='joseki.html'">
+          Джосеки
+        </button>
+
         <section class="panel settings">
           <button id="settingsToggle" class="secondary panelToggle" type="button" aria-expanded="false" aria-controls="settingsBody">Настройки</button>
           <div id="settingsBody" class="settingsBody" hidden>
@@ -283,7 +275,6 @@
   <script src="sgf.js"></script>
   <script src="tree.js"></script>
   <script src="ui.js"></script>
-  <script src="joseki.js?v=kogo-no-study-20261007-1"></script>
   <script src="review.js"></script>
   <script src="app.js"></script>
 </body>
