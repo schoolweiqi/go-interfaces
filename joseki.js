@@ -1,23 +1,65 @@
 // Local joseki library loader.
-// Uses a static SGF snapshot derived from OGS Joseki Explorer node 15081.
-// No live requests to OGS are made during normal activation.
+// Primary source: Kogo's Joseki Dictionary stored in this repository.
+// No live requests to OGS are made during activation.
 
-const OGS_JOSEKI_ROOT_ID = "15081";
-const LOCAL_JOSEKI_SGF_URL = "data/joseki/ogs-15081.sgf";
-
-function parseOgsNodeIdFromComment(comment) {
-  const text = String(comment || "");
-  const match = text.match(/(?:OGS Joseki node:\s*|OGS position\s*|OGS Joseki Explorer position\s*)(\d+)/i);
-  return match ? match[1] : null;
-}
+const JOSEKI_LIBRARY_NAME = "Kogo's Joseki Dictionary";
+const LOCAL_JOSEKI_SGF_URL = "data/joseki/Kogo%27s%20Joseki%20Dictionary.sgf";
 
 function extractSgfComment(rawNode) {
   if (!rawNode || !rawNode.C || !rawNode.C.length) return "";
   return rawNode.C.join("\n");
 }
 
-function decorateTreeFromSgf(rawTree, gameTree) {
+function extractSgfLabels(rawNode, size) {
+  if (!rawNode || !Array.isArray(rawNode.LB)) return [];
+
+  return rawNode.LB.map(value => {
+    const text = String(value || "");
+    const separator = text.indexOf(":");
+    if (separator <= 0) return null;
+
+    const pointText = text.slice(0, separator);
+    const label = text.slice(separator + 1);
+    if (!label) return null;
+
+    try {
+      const point = sgfPointToXY(pointText, size);
+      if (point.pass) return null;
+      return { x: point.x, y: point.y, label };
+    } catch (_) {
+      return null;
+    }
+  }).filter(Boolean);
+}
+
+function applyKogoNodeMetadata(treeNode, rawNode, size) {
+  if (!treeNode || !rawNode) return;
+
+  const labels = extractSgfLabels(rawNode, size);
+  const comment = extractSgfComment(rawNode);
+  const hasContextSetup = Boolean(
+    (rawNode.AB && rawNode.AB.length) ||
+    (rawNode.AW && rawNode.AW.length) ||
+    (rawNode.AE && rawNode.AE.length)
+  );
+
+  treeNode.josekiMeta = {
+    ...(treeNode.josekiMeta || {}),
+    comment: comment || (treeNode.josekiMeta && treeNode.josekiMeta.comment) || "",
+    labels: labels.length ? labels : ((treeNode.josekiMeta && treeNode.josekiMeta.labels) || []),
+    hasContextSetup
+  };
+}
+
+/*
+ * GameTree stores only move nodes, while Kogo also has informational nodes
+ * containing labels/comments without a move. Attach such metadata to the
+ * current GameTree position, so the original A/B/C... choice labels remain
+ * available on our board.
+ */
+function decorateTreeFromKogoSgf(rawTree, gameTree) {
   const queue = [{ rawTree, treeNode: gameTree.root }];
+
   while (queue.length) {
     const { rawTree: rt, treeNode } = queue.shift();
     const sequence = Array.isArray(rt.sequence) ? rt.sequence : [];
@@ -25,33 +67,31 @@ function decorateTreeFromSgf(rawTree, gameTree) {
 
     for (const rawNode of sequence) {
       const move = moveFromSgfNode(rawNode, gameTree.meta.size);
+
       if (!move) {
-        const nodeId = parseOgsNodeIdFromComment(extractSgfComment(rawNode));
-        if (nodeId) cursor.josekiMeta = { ...(cursor.josekiMeta || {}), nodeId };
+        applyKogoNodeMetadata(cursor, rawNode, gameTree.meta.size);
         continue;
       }
 
       const child = cursor.children.find(candidate => gameTree.sameMove(candidate.move, move));
       if (!child) continue;
 
-      const comment = extractSgfComment(rawNode);
-      const nodeId = parseOgsNodeIdFromComment(comment);
-      child.josekiMeta = {
-        ...(child.josekiMeta || {}),
-        nodeId,
-        comment
-      };
       cursor = child;
+      applyKogoNodeMetadata(cursor, rawNode, gameTree.meta.size);
     }
 
     const variations = Array.isArray(rt.variations) ? rt.variations : [];
-    for (const variation of variations) queue.push({ rawTree: variation, treeNode: cursor });
+    for (const variation of variations) {
+      queue.push({ rawTree: variation, treeNode: cursor });
+    }
   }
 }
 
 async function loadLocalJosekiSgf() {
   const response = await fetch(LOCAL_JOSEKI_SGF_URL, { cache: "no-cache" });
-  if (!response.ok) throw new Error(`Локальный SGF не загружен: HTTP ${response.status}`);
+  if (!response.ok) {
+    throw new Error(`Локальный SGF не загружен: HTTP ${response.status}`);
+  }
   return response.text();
 }
 
@@ -65,7 +105,7 @@ async function loadLocalJosekiSgf() {
     activateButton.disabled = true;
 
     try {
-      status.textContent = "Загружаю локальную библиотеку джосеки…";
+      status.textContent = `Загружаю ${JOSEKI_LIBRARY_NAME}…`;
 
       const sgf = await loadLocalJosekiSgf();
 
@@ -74,16 +114,17 @@ async function loadLocalJosekiSgf() {
       }
 
       const result = window.loadSgfTextIntoGame(sgf, {
-        sourceName: `Локальная библиотека OGS Joseki ${OGS_JOSEKI_ROOT_ID}`,
+        sourceName: JOSEKI_LIBRARY_NAME,
         focusDepth: 0,
         josekiMode: true
       });
 
       const parsed = parseSgfGameWithVariations(sgf);
-      decorateTreeFromSgf(parsed.rawTree, window.goGameTree);
+      decorateTreeFromKogoSgf(parsed.rawTree, window.goGameTree);
+
       window.josekiModeActive = true;
       window.currentJosekiSgf = sgf;
-      window.currentJosekiRootId = OGS_JOSEKI_ROOT_ID;
+      window.currentJosekiLibraryName = JOSEKI_LIBRARY_NAME;
 
       if (typeof window.refreshJosekiChoices === "function") {
         window.refreshJosekiChoices();
@@ -91,8 +132,8 @@ async function loadLocalJosekiSgf() {
 
       const variants = window.goGameTree?.current?.children?.length || 0;
       status.textContent =
-        `Джосеки активировано локально. OGS #${OGS_JOSEKI_ROOT_ID}: ` +
-        `в дереве ${result.nodeCount} узлов. В текущей позиции вариантов: ${variants}.`;
+        `${JOSEKI_LIBRARY_NAME} активирован. В дереве ${result.nodeCount} узлов. ` +
+        `В текущей позиции вариантов: ${variants}.`;
     } catch (error) {
       console.error("Local joseki load failed:", error);
       status.textContent = `Ошибка загрузки джосеки: ${error.message}`;
