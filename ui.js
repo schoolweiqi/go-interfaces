@@ -258,6 +258,15 @@ window.stoneSound = (() => {
     const botScore = document.getElementById('botScore');
 
     let gameMode = 'local'; // local | bot | network | ogs
+
+    function reviewSessionActive() {
+      return Boolean(window.goReview?.state?.roomId);
+    }
+
+    function treeNavigationAllowed() {
+      return gameMode === 'local' || reviewSessionActive();
+    }
+
     const botGame = {
       active: false,
       ended: false,
@@ -294,6 +303,10 @@ window.stoneSound = (() => {
     };
 
     function currentMoveNumber() {
+      // Во время совместного разбора дерево остаётся основным навигатором,
+      // даже если до входа в разбор был активен другой игровой режим.
+      if (reviewSessionActive()) return gameTree.current.depth;
+
       // В локальном режиме номер хода определяется выбранным узлом дерева.
       if (gameMode === 'local') return gameTree.current.depth;
 
@@ -396,7 +409,7 @@ window.stoneSound = (() => {
 
     function updateGameTreeView() {
       renderGameTree(gameTree, gameTreeSvg, gameTreeScroller);
-      deleteVariationBranchButton.disabled = gameMode !== 'local' || gameTree.current === gameTree.root;
+      deleteVariationBranchButton.disabled = !treeNavigationAllowed() || gameTree.current === gameTree.root;
       refreshJosekiChoices();
     }
 
@@ -723,7 +736,7 @@ window.stoneSound = (() => {
      * вниз — один ход вперёд по выбранной (preferred) вариации.
      */
     board.canvas.addEventListener('wheel', (event) => {
-      if (gameMode !== 'local') return;
+      if (!treeNavigationAllowed()) return;
       event.preventDefault();
 
       const before = gameTree.current;
@@ -733,7 +746,7 @@ window.stoneSound = (() => {
 
     // Клик по узлу дерева сразу переводит доску в соответствующую позицию.
     gameTreeSvg.addEventListener('click', (event) => {
-      if (gameMode !== 'local') return;
+      if (!treeNavigationAllowed()) return;
       const element = event.target.closest('[data-node-id]');
       if (!element) return;
       const node = gameTree.nodes.get(Number(element.dataset.nodeId));
@@ -742,7 +755,7 @@ window.stoneSound = (() => {
     });
 
     deleteVariationBranchButton.addEventListener('click', () => {
-      if (gameMode !== 'local' || gameTree.current === gameTree.root) return;
+      if (!treeNavigationAllowed() || gameTree.current === gameTree.root) return;
 
       const moveNo = gameTree.current.depth;
       const childCount = gameTree.current.children.length;
