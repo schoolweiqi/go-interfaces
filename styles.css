@@ -447,38 +447,50 @@ canvas {
 .ogsAuthActions button { margin-bottom: 0; }
 .ogsSearchSettings {
   display: grid;
-  gap: 8px;
-  padding: 10px;
+  gap: 7px;
   margin: 8px 0 10px;
-  border: 1px solid #34383d;
-  border-radius: 8px;
-  background: #17191b;
 }
-.ogsSearchSettingsTitle {
-  font-size: 11px;
-  font-weight: 700;
-  color: #e2e5e8;
+.ogsChoiceRow {
+  display: grid;
+  gap: 6px;
+  width: 100%;
 }
-.ogsSearchSettings label {
-  margin: 0;
-  font-size: 11px;
+.ogsChoiceRowSizes {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
-.ogsSearchSettings select,
-.ogsSearchSettings input {
-  margin: 4px 0 0;
+.ogsChoiceRowSpeeds {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.ogsChoiceButton {
+  min-width: 0;
   min-height: 34px;
-  font-size: 12px;
+  margin: 0;
+  padding: 7px 6px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.ogsChoiceButton.active,
+.ogsChoiceButton[aria-pressed="true"] {
+  border-color: #b98645;
+  background: #3a3024;
+  color: #f0d4a4;
+}
+.ogsChoiceButton:disabled {
+  opacity: .55;
 }
 .ogsRankRange {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
 }
-.ogsSearchTimeHint {
-  min-height: 16px;
-  color: #9ca3aa;
-  font-size: 10px;
-  line-height: 1.35;
+.ogsRankRange label {
+  margin: 0;
+  font-size: 11px;
+}
+.ogsRankRange input {
+  margin: 4px 0 0;
+  min-height: 34px;
+  font-size: 12px;
 }
 .ogsPlayerLinkLabel {
   display: block;
