@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Джосеки — Школа Го</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="josekiPage">
+  <div class="shell">
+    <main class="josekiLayout">
+      <aside class="leftPanel josekiSidebar">
+        <button id="backToMain" class="secondary sidebarPageButton" type="button" onclick="location.href='index.html'">
+          Вернуться
+        </button>
+
+        <button id="activateJoseki" type="button">Активировать</button>
+
+        <div id="josekiStatus" class="networkStatus">
+          Источник: Kogo's Joseki Dictionary.
+        </div>
+      </aside>
+
+      <section class="josekiWorkspace">
+        <h1>Джосеки</h1>
+        <div class="boardWrap">
+          <div class="boardColumn">
+            <canvas id="board" aria-label="Доска Го — Джосеки"></canvas>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="game.js"></script>
+  <script src="influence.js"></script>
+  <script src="faces.js"></script>
+  <script src="board.js"></script>
+  <script src="sgf.js"></script>
+  <script src="tree.js"></script>
+  <script src="joseki-page.js?v=20261007-1"></script>
+</body>
+</html>
