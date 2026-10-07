@@ -469,3 +469,36 @@ canvas {
   canvas { width: 100%; }
   .gameTreeScroller { height: 150px; }
 }
+
+
+/* Standalone page navigation buttons in the left sidebar. */
+.sidebarPageButton {
+  flex: 0 0 auto;
+  width: 100%;
+  min-height: 32px !important;
+  margin: 0 !important;
+  font-size: 13px !important;
+}
+
+/* Standalone Joseki page: separate controller, same visual language. */
+.josekiLayout {
+  grid-template-columns: 300px minmax(0, 1fr);
+}
+.josekiSidebar {
+  padding-top: 10px;
+}
+.josekiWorkspace {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.josekiWorkspace h1 {
+  margin: 4px 0 10px;
+  font-size: 24px;
+  line-height: 1.2;
+}
+.josekiWorkspace .boardWrap {
+  flex: 1 1 auto;
+}
