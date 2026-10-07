@@ -52,6 +52,73 @@ GoBoard.prototype.handlePhantomPointerMove = function(event) {
         this.draw();
       };
 
+GoBoard.prototype.setJosekiChoices = function(choices) {
+        this.josekiChoices = Array.isArray(choices)
+          ? choices
+              .map(choice => ({
+                x: Number(choice.x),
+                y: Number(choice.y),
+                label: String(choice.label == null ? "" : choice.label),
+                category: String(choice.category || ""),
+                nodeId: choice.nodeId == null ? null : String(choice.nodeId)
+              }))
+              .filter(choice =>
+                Number.isInteger(choice.x) &&
+                Number.isInteger(choice.y) &&
+                choice.x >= 0 &&
+                choice.y >= 0 &&
+                choice.x < this.size &&
+                choice.y < this.size
+              )
+          : [];
+        this.draw();
+      };
+
+GoBoard.prototype.drawJosekiChoices = function(pad, step) {
+        if (!Array.isArray(this.josekiChoices) || !this.josekiChoices.length) return;
+
+        const colors = {
+          IDEAL: '#008300',
+          GOOD: '#436600',
+          MISTAKE: '#b3001e',
+          TRICK: '#ffff00',
+          QUESTION: '#00ccff'
+        };
+
+        const c = this.ctx;
+        c.save();
+        c.textAlign = 'center';
+        c.textBaseline = 'middle';
+        c.font = `700 ${Math.max(10, step * 0.34)}px Inter, system-ui, sans-serif`;
+
+        for (const choice of this.josekiChoices) {
+          const cx = pad + choice.x * step;
+          const cy = pad + choice.y * step;
+          const category = String(choice.category || '').toUpperCase();
+          const fill = colors[category] || '#355d8a';
+          const radius = Math.max(6, step * 0.27);
+
+          c.beginPath();
+          c.arc(cx, cy, radius, 0, Math.PI * 2);
+          c.fillStyle = fill;
+          c.globalAlpha = 0.94;
+          c.fill();
+
+          c.globalAlpha = 1;
+          c.lineWidth = Math.max(1, step * 0.035);
+          c.strokeStyle = 'rgba(255,255,255,.88)';
+          c.stroke();
+
+          const label = choice.label && choice.label !== '_' ? choice.label : '';
+          if (label) {
+            c.fillStyle = category === 'TRICK' || category === 'QUESTION' ? '#111' : '#fff';
+            c.fillText(label, cx, cy + 0.5);
+          }
+        }
+
+        c.restore();
+      };
+
 GoBoard.prototype.metrics = function() {
         const rect = this.canvas.getBoundingClientRect();
         const cssSize = Math.max(300, Math.min(rect.width || 700, rect.width || 700));
@@ -176,6 +243,7 @@ GoBoard.prototype.draw = function() {
         this.drawLastMoveMarker(pad, step);
         this.drawRemovedStoneMarks(pad, step);
         this.drawInfluenceNumbers(pad, step);
+        this.drawJosekiChoices(pad, step);
 
         /*
          * В режимах "связи" и "лица" предполагаемый камень может сливаться
