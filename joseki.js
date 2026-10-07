@@ -135,7 +135,7 @@ function transformSequenceToCorner(sequence, fromCorner, toCorner, size = 19) {
 }
 
 function randomStudyRole() {
-  const roles = ["black", "white", "both"];
+  const roles = ["black", "white"];
   return roles[Math.floor(Math.random() * roles.length)];
 }
 
@@ -267,6 +267,35 @@ function startStudyRound() {
   clearStudyBoard();
   updateStudyStatus();
   advanceAutomaticStudyMoves();
+}
+
+function handleStudyPass() {
+  if (!josekiStudy.active) return false;
+
+  const round = josekiStudy.rounds[josekiStudy.roundIndex];
+  if (!round) return true;
+
+  const expectedSource = josekiStudy.sequence[josekiStudy.moveIndex];
+  if (!expectedSource) return true;
+
+  if (!isHumanStudyMove(expectedSource, round.role)) {
+    advanceAutomaticStudyMoves();
+    return true;
+  }
+
+  if (!expectedSource.pass) {
+    updateStudyStatus("Сейчас ожидается ход на доске, а не пас.");
+    return true;
+  }
+
+  applyStudyMove(expectedSource);
+  josekiStudy.moveIndex += 1;
+
+  if (!finishStudyRoundIfDone()) {
+    advanceAutomaticStudyMoves();
+  }
+
+  return true;
 }
 
 function handleStudyIntersection(x, y) {
@@ -471,4 +500,5 @@ function deactivateJoseki() {
 })();
 
 window.handleJosekiStudyIntersection = handleStudyIntersection;
+window.handleJosekiStudyPass = handleStudyPass;
 window.finishJosekiStudy = finishJosekiStudy;
