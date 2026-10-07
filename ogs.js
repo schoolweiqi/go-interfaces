@@ -30,6 +30,11 @@ const authMsg = document.getElementById("authMsg");
 const loginButton = document.getElementById("login");
 const logoutButton = document.getElementById("logout");
 const findButton = document.getElementById("findOpponent");
+const ogsSearchSize = document.getElementById("ogsSearchSize");
+const ogsSearchSpeed = document.getElementById("ogsSearchSpeed");
+const ogsSearchLowerRank = document.getElementById("ogsSearchLowerRank");
+const ogsSearchUpperRank = document.getElementById("ogsSearchUpperRank");
+const ogsSearchTimeHint = document.getElementById("ogsSearchTimeHint");
 const ogsBotButton = document.getElementById("challengeOgsBot");
 const ogsChallengePlayerUrl = document.getElementById("ogsChallengePlayerUrl");
 const cancelButton = document.getElementById("cancelSearch");
@@ -763,14 +768,101 @@ async function connectOgsSocket(accessToken) {
   });
 }
 
+const OGS_SEARCH_STORAGE_KEY = "schoolweiqi_ogs_search_settings";
+
+const OGS_BYOYOMI_PRESETS = {
+  9: {
+    rapid: { main: 2, periods: 5, period: 30 },
+    live: { main: 5, periods: 5, period: 30 }
+  },
+  13: {
+    rapid: { main: 3, periods: 5, period: 30 },
+    live: { main: 10, periods: 5, period: 30 }
+  },
+  19: {
+    rapid: { main: 5, periods: 5, period: 30 },
+    live: { main: 20, periods: 5, period: 30 }
+  }
+};
+
+function clampRankDiff(value) {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n)) return 3;
+  return Math.max(0, Math.min(9, n));
+}
+
+function currentOgsSearchSettings() {
+  const size = [9, 13, 19].includes(Number(ogsSearchSize && ogsSearchSize.value))
+    ? Number(ogsSearchSize.value)
+    : 19;
+  const speed = ogsSearchSpeed && ogsSearchSpeed.value === "rapid" ? "rapid" : "live";
+
+  return {
+    size,
+    speed,
+    lowerRankDiff: clampRankDiff(ogsSearchLowerRank && ogsSearchLowerRank.value),
+    upperRankDiff: clampRankDiff(ogsSearchUpperRank && ogsSearchUpperRank.value)
+  };
+}
+
+function renderOgsSearchTimeHint() {
+  if (!ogsSearchTimeHint) return;
+  const settings = currentOgsSearchSettings();
+  const preset = OGS_BYOYOMI_PRESETS[settings.size][settings.speed];
+  ogsSearchTimeHint.textContent =
+    "OGS: " + preset.main + " мин + " + preset.periods + "×" + preset.period + " сек";
+}
+
+function saveOgsSearchSettings() {
+  const settings = currentOgsSearchSettings();
+
+  if (ogsSearchLowerRank) ogsSearchLowerRank.value = String(settings.lowerRankDiff);
+  if (ogsSearchUpperRank) ogsSearchUpperRank.value = String(settings.upperRankDiff);
+
+  try {
+    localStorage.setItem(OGS_SEARCH_STORAGE_KEY, JSON.stringify(settings));
+  } catch (_) {}
+
+  renderOgsSearchTimeHint();
+}
+
+function loadOgsSearchSettings() {
+  let settings = null;
+  try {
+    settings = JSON.parse(localStorage.getItem(OGS_SEARCH_STORAGE_KEY) || "null");
+  } catch (_) {}
+
+  if (!settings || typeof settings !== "object") {
+    settings = { size: 19, speed: "live", lowerRankDiff: 3, upperRankDiff: 3 };
+  }
+
+  const size = [9, 13, 19].includes(Number(settings.size)) ? Number(settings.size) : 19;
+  const speed = settings.speed === "rapid" ? "rapid" : "live";
+  const lower = clampRankDiff(settings.lowerRankDiff);
+  const upper = clampRankDiff(settings.upperRankDiff);
+
+  if (ogsSearchSize) ogsSearchSize.value = String(size);
+  if (ogsSearchSpeed) ogsSearchSpeed.value = speed;
+  if (ogsSearchLowerRank) ogsSearchLowerRank.value = String(lower);
+  if (ogsSearchUpperRank) ogsSearchUpperRank.value = String(upper);
+
+  renderOgsSearchTimeHint();
+}
+
 function automatchPreferences() {
+  const settings = currentOgsSearchSettings();
+
   return {
     uuid: makeUuid(),
     size_speed_options: [
-      { size: "19x19", speed: "live", system: "byoyomi" }
+      {
+        size: settings.size + "x" + settings.size,
+        speed: settings.speed,
+        system: "byoyomi"
+      }
     ],
-    lower_rank_diff: 3,
-    upper_rank_diff: 3,
+    lower_rank_diff: settings.lowerRankDiff,
+    upper_rank_diff: settings.upperRankDiff,
     rules: { condition: "required", value: "japanese" },
     handicap: { condition: "required", value: "disabled" },
     timestamp: Date.now()
@@ -796,12 +888,21 @@ function startAutomatch() {
 
   if (ogsGame.active && ogsGame.phase === "finished") disconnectOgsGame(false);
 
+  saveOgsSearchSettings();
+  const settings = currentOgsSearchSettings();
   const preferences = automatchPreferences();
+  const preset = OGS_BYOYOMI_PRESETS[settings.size][settings.speed];
+
   activeAutomatchUuid = preferences.uuid;
   wsSend("automatch/find_match", preferences);
   setSearchState(
     true,
-    "Ищем соперника: 19×19 · Japanese · Live · byo-yomi."
+    "Ищем соперника: " +
+      settings.size + "×" + settings.size +
+      " · Japanese · " +
+      (settings.speed === "rapid" ? "Rapid" : "Live") +
+      " · " + preset.main + " мин + " + preset.periods + "×" + preset.period + " сек" +
+      " · ранг −" + settings.lowerRankDiff + "/+" + settings.upperRankDiff + "."
   );
 }
 
@@ -1693,6 +1794,14 @@ function logoutOgs() {
 if (ogsChallengePlayerUrl && OGS.defaultChallengePlayerUrl) {
   ogsChallengePlayerUrl.value = OGS.defaultChallengePlayerUrl;
 }
+
+loadOgsSearchSettings();
+
+[ogsSearchSize, ogsSearchSpeed, ogsSearchLowerRank, ogsSearchUpperRank]
+  .filter(Boolean)
+  .forEach((element) => {
+    element.addEventListener("change", saveOgsSearchSettings);
+  });
 
 loginButton.addEventListener("click", () => {
   startOgsLogin().catch((error) => {
