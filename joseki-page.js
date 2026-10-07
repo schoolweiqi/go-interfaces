@@ -44,7 +44,9 @@ const study = {
   roundIndex: 0,
   moveIndex: 0,
   firstHumanMoveIndex: -1,
-  savedPath: []
+  savedPath: [],
+  transitioning: false,
+  transitionTimer: null
 };
 
 function oppositeColor(color) {
@@ -291,7 +293,8 @@ async function refreshChoices() {
   if (!node) {
     browse.choices = [];
     board.setJosekiChoices([]);
-    status.textContent = "Для этой ветки пока нет локальных данных Josekipedia.";
+    status.textContent =
+      `Свободная последовательность · текущий ход ${browse.path.length}. Можно ставить любые допустимые ходы и затем изучать получившийся вариант.`;
     updateStudyAvailability();
     return;
   }
@@ -312,7 +315,7 @@ async function refreshChoices() {
     : "Josekipedia API";
 
   status.textContent =
-    `${JOSEKI_LIBRARY_NAME} · ${sourceText} · текущий ход ${browse.path.length} · вариантов: ${browse.choices.length}.`;
+    `${JOSEKI_LIBRARY_NAME} · ${sourceText} · текущий ход ${browse.path.length} · вариантов базы: ${browse.choices.length}. Свободный ход также разрешён.`;
 
   updateStudyAvailability();
 }
@@ -320,27 +323,54 @@ async function refreshChoices() {
 async function chooseAt(x, y) {
   const choice = browse.choices.find(item => item.x === x && item.y === y);
 
-  if (!choice) {
-    status.textContent = "Этого хода нет среди вариантов текущей позиции Josekipedia.";
+  if (choice) {
+    let move = { ...choice.move };
+
+    if (move.color !== 1 && move.color !== 2) {
+      const target = await getNode(choice.childId);
+      if (target?.move?.color === 1 || target?.move?.color === 2) {
+        move.color = target.move.color;
+      } else {
+        move.color = expectedNextColor();
+      }
+    }
+
+    browse.path.push({
+      parentId: browse.currentId,
+      childId: choice.childId,
+      type: choice.type,
+      custom: false,
+      move
+    });
+
+    await restoreBrowsePosition();
     return;
   }
 
-  let move = { ...choice.move };
+  // A move does not have to exist in the loaded joseki database.
+  // Once the user leaves the known tree, we keep recording a free sequence
+  // with normal Go legality checks. The resulting sequence is still fully
+  // available to the study mode.
+  const color = expectedNextColor();
+  const preview = board.simulateStone(x, y, color);
 
-  if (move.color !== 1 && move.color !== 2) {
-    const target = await getNode(choice.childId);
-    if (target?.move?.color === 1 || target?.move?.color === 2) {
-      move.color = target.move.color;
-    } else {
-      move.color = expectedNextColor();
-    }
+  if (!preview?.ok) {
+    status.textContent = `Недопустимый ход: ${preview?.reason || "этот камень нельзя поставить"}.`;
+    return;
   }
 
   browse.path.push({
     parentId: browse.currentId,
-    childId: choice.childId,
-    type: choice.type,
-    move
+    childId: null,
+    type: null,
+    custom: true,
+    move: {
+      color,
+      pass: false,
+      x,
+      y,
+      point: null
+    }
   });
 
   await restoreBrowsePosition();
@@ -485,10 +515,11 @@ function updateStudyStatus(extra = "") {
 function finishStudyRoundIfDone() {
   if (study.moveIndex < study.sequence.length) return false;
 
-  study.roundIndex += 1;
+  const isLastRound = study.roundIndex >= study.rounds.length - 1;
 
-  if (study.roundIndex >= study.rounds.length) {
+  if (isLastRound) {
     study.completed = true;
+    study.transitioning = false;
     board.setJosekiChoices([]);
     if (finishStudyButton) finishStudyButton.hidden = false;
     updateStudyStatus("Все шесть повторений пройдены успешно. Нажмите «Завершить обучение».");
@@ -496,12 +527,28 @@ function finishStudyRoundIfDone() {
     return true;
   }
 
-  startStudyRound();
+  // Keep the completed position visible for one second so the learner can
+  // inspect the final stone before the board is cleared for the next round.
+  study.transitioning = true;
+  board.setJosekiChoices([]);
+  updateStudyStatus("Правильно. Следующее повторение начнётся через 1 секунду.");
+  board.draw();
+
+  if (study.transitionTimer) clearTimeout(study.transitionTimer);
+  study.transitionTimer = setTimeout(() => {
+    study.transitionTimer = null;
+    if (!study.active || study.completed) return;
+
+    study.roundIndex += 1;
+    study.transitioning = false;
+    startStudyRound();
+  }, 1000);
+
   return true;
 }
 
 function advanceAutomaticStudyMoves() {
-  if (!study.active || study.completed) return;
+  if (!study.active || study.completed || study.transitioning) return;
 
   const round = study.rounds[study.roundIndex];
   if (!round) return;
@@ -530,6 +577,7 @@ function advanceAutomaticStudyMoves() {
 function startStudyRound() {
   if (!study.active || study.completed) return;
 
+  study.transitioning = false;
   study.moveIndex = 0;
   clearStudyBoard();
 
@@ -543,7 +591,7 @@ function startStudyRound() {
 }
 
 function handleStudyIntersection(x, y) {
-  if (!study.active || study.completed) return;
+  if (!study.active || study.completed || study.transitioning) return;
 
   const round = study.rounds[study.roundIndex];
   const sourceMove = study.sequence[study.moveIndex];
@@ -627,6 +675,11 @@ function startStudy() {
   study.roundIndex = 0;
   study.moveIndex = 0;
   study.firstHumanMoveIndex = -1;
+  study.transitioning = false;
+  if (study.transitionTimer) {
+    clearTimeout(study.transitionTimer);
+    study.transitionTimer = null;
+  }
   study.rounds = buildStudyRounds();
 
   if (finishStudyButton) finishStudyButton.hidden = true;
@@ -651,6 +704,11 @@ async function finishStudy({ restore = true } = {}) {
   study.moveIndex = 0;
   study.firstHumanMoveIndex = -1;
   study.savedPath = [];
+  study.transitioning = false;
+  if (study.transitionTimer) {
+    clearTimeout(study.transitionTimer);
+    study.transitionTimer = null;
+  }
 
   board.setJosekiChoices([]);
 
