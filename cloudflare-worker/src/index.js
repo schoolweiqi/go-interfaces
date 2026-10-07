@@ -494,11 +494,20 @@ export class GameRoom extends DurableObject {
       const item = this.sanitizeReviewItem(state, data.item, authorIndex);
       if (!item) return this.sendError(ws, "Некорректная метка");
       state.items = Array.isArray(state.items) ? state.items : [];
+      if (item.kind === "mark") {
+        state.items = state.items.filter(existing => !(
+          existing?.kind === "mark" &&
+          Number(existing.x) === Number(item.x) &&
+          Number(existing.y) === Number(item.y)
+        ));
+      }
       state.items.push(item);
       if (state.items.length > 5000) state.items = state.items.slice(-5000);
     } else if (data.type === "review-undo") {
       state.items = Array.isArray(state.items) ? state.items : [];
       state.items.pop();
+    } else if (data.type === "review-clear") {
+      state.items = [];
     } else if (data.type === "review-board") {
       if (authorIndex !== 0) return this.sendError(ws, "Позицию может менять только ведущий разбора");
       const boardState = this.sanitizeReviewBoardState(state, data.boardState);
