@@ -97,26 +97,16 @@
           <div id="authMsg" class="msg">Не подключено к OGS.</div>
 
           <div class="ogsSearchSettings">
-            <div class="ogsSearchSettingsTitle">Настройки поиска соперника</div>
+            <div id="ogsSearchSizes" class="ogsChoiceRow ogsChoiceRowSizes" role="group" aria-label="Размеры доски">
+              <button class="secondary ogsChoiceButton" type="button" data-size="9" aria-pressed="false">9 × 9</button>
+              <button class="secondary ogsChoiceButton" type="button" data-size="13" aria-pressed="false">13 × 13</button>
+              <button class="secondary ogsChoiceButton active" type="button" data-size="19" aria-pressed="true">19 × 19</button>
+            </div>
 
-            <label>
-              Размер доски
-              <select id="ogsSearchSize">
-                <option value="9">9 × 9</option>
-                <option value="13">13 × 13</option>
-                <option value="19" selected>19 × 19</option>
-              </select>
-            </label>
-
-            <label>
-              Скорость
-              <select id="ogsSearchSpeed">
-                <option value="rapid">Rapid</option>
-                <option value="live" selected>Live</option>
-              </select>
-            </label>
-
-            <div id="ogsSearchTimeHint" class="ogsSearchTimeHint"></div>
+            <div id="ogsSearchSpeeds" class="ogsChoiceRow ogsChoiceRowSpeeds" role="group" aria-label="Скорость партии">
+              <button class="secondary ogsChoiceButton" type="button" data-speed="rapid" aria-pressed="false">Rapid</button>
+              <button class="secondary ogsChoiceButton active" type="button" data-speed="live" aria-pressed="true">Live</button>
+            </div>
 
             <div class="ogsRankRange">
               <label>
