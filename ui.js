@@ -345,12 +345,7 @@ window.movePause = (() => {
       updateTurn();
       updateCaptures();
       updateGameTreeView();
-      if (typeof window.updateJosekiStudyAvailability === 'function') {
-        window.updateJosekiStudyAvailability();
-      }
     }
-
-    window.restoreJosekiTreePosition = restoreTreePosition;
 
     function resetGameTreeFromBoard(initialTurn = 1) {
       gameTree.reset({
@@ -406,16 +401,6 @@ window.movePause = (() => {
 
     board.onIntersection = async (x, y) => {
       board.phantomHover = null;
-
-      if (window.josekiStudyActive && typeof window.handleJosekiStudyIntersection === 'function') {
-        window.handleJosekiStudyIntersection(x, y);
-        return;
-      }
-
-      if (window.josekiModeActive && typeof window.handleJosekiBrowseIntersection === 'function') {
-        window.handleJosekiBrowseIntersection(x, y);
-        return;
-      }
 
       if (gameMode === 'ogs') {
         handleOgsBoardClick(x, y);
@@ -496,16 +481,6 @@ window.movePause = (() => {
 
 
     document.getElementById('pass').addEventListener('click', async () => {
-      if (window.josekiStudyActive && typeof window.handleJosekiStudyPass === 'function') {
-        window.handleJosekiStudyPass();
-        return;
-      }
-
-      if (window.josekiModeActive && typeof window.handleJosekiBrowsePass === 'function') {
-        window.handleJosekiBrowsePass();
-        return;
-      }
-
       if (gameMode !== 'ogs' && pauseBlocksMove(gameMode === 'network' ? networkStatus : gameMsg)) return;
 
       if (gameMode === 'ogs') {
@@ -648,7 +623,6 @@ window.movePause = (() => {
      * вниз — один ход вперёд по выбранной (preferred) вариации.
      */
     board.canvas.addEventListener('wheel', (event) => {
-      if (window.josekiStudyActive) return;
       if (gameMode !== 'local') return;
       event.preventDefault();
 
@@ -659,7 +633,6 @@ window.movePause = (() => {
 
     // Клик по узлу дерева сразу переводит доску в соответствующую позицию.
     gameTreeSvg.addEventListener('click', (event) => {
-      if (window.josekiStudyActive) return;
       if (gameMode !== 'local') return;
       const element = event.target.closest('[data-node-id]');
       if (!element) return;
