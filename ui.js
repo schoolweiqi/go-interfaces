@@ -345,6 +345,9 @@ window.movePause = (() => {
       updateTurn();
       updateCaptures();
       updateGameTreeView();
+      if (typeof window.updateJosekiStudyAvailability === 'function') {
+        window.updateJosekiStudyAvailability();
+      }
     }
 
     window.restoreJosekiTreePosition = restoreTreePosition;
@@ -406,6 +409,11 @@ window.movePause = (() => {
 
       if (window.josekiStudyActive && typeof window.handleJosekiStudyIntersection === 'function') {
         window.handleJosekiStudyIntersection(x, y);
+        return;
+      }
+
+      if (window.josekiModeActive && typeof window.handleJosekiBrowseIntersection === 'function') {
+        window.handleJosekiBrowseIntersection(x, y);
         return;
       }
 
@@ -490,6 +498,11 @@ window.movePause = (() => {
     document.getElementById('pass').addEventListener('click', async () => {
       if (window.josekiStudyActive && typeof window.handleJosekiStudyPass === 'function') {
         window.handleJosekiStudyPass();
+        return;
+      }
+
+      if (window.josekiModeActive && typeof window.handleJosekiBrowsePass === 'function') {
+        window.handleJosekiBrowsePass();
         return;
       }
 
