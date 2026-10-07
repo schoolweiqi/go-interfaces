@@ -72,8 +72,9 @@
       <div class="reviewColorRow"><label>Цвет линии</label><input id="reviewLineColor" type="color" value="#e53935"></div>
       <div class="reviewActions">
         <button id="reviewUndo" class="secondary" type="button">Стереть</button>
-        <button id="reviewCreate" type="button">Создать разбор</button>
+        <button id="reviewClear" class="secondary" type="button">Очистить</button>
       </div>
+      <button id="reviewCreate" type="button">Создать разбор</button>
       <button id="reviewLeave" class="secondary" type="button" hidden>Выйти из разбора</button>
       <div id="reviewLinkBox" class="reviewLinkBox" hidden>
         <input id="reviewLink" readonly>
@@ -93,6 +94,7 @@
   const squareColor = q('#reviewSquareColor');
   const lineColor = q('#reviewLineColor');
   const undoButton = q('#reviewUndo');
+  const clearButton = q('#reviewClear');
   const createButton = q('#reviewCreate');
   const leaveButton = q('#reviewLeave');
   const linkBox = q('#reviewLinkBox');
@@ -157,6 +159,13 @@
   }
 
   function localAdd(item) {
+    if(item?.kind==='mark'){
+      state.items=state.items.filter(existing=>!(
+        existing?.kind==='mark' &&
+        Number(existing.x)===Number(item.x) &&
+        Number(existing.y)===Number(item.y)
+      ));
+    }
     state.items.push({
       id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()+Math.random()),
       authorIndex: state.participantIndex,
@@ -253,7 +262,7 @@
     ctx.lineJoin='round';
     ctx.lineCap='round';
     ctx.strokeStyle='#111';
-    ctx.lineWidth=width+3;
+    ctx.lineWidth=width+1.4;
     draw(); ctx.stroke();
     ctx.strokeStyle=author;
     ctx.lineWidth=width;
@@ -263,7 +272,7 @@
 
   function drawMark(item,pad,step) {
     const c=board.ctx, cx=pad+item.x*step, cy=pad+item.y*step, r=step*.26;
-    const author=participantColor(item.authorIndex), w=Math.max(2,step*.065);
+    const author=participantColor(item.authorIndex), w=Math.max(1.1,step*.035);
     if (item.markType==='circle') outlinedPath(c,()=>{c.beginPath();c.arc(cx,cy,r,0,Math.PI*2)},author,w);
     else if (item.markType==='square') outlinedPath(c,()=>{c.beginPath();c.rect(cx-r,cy-r,2*r,2*r)},author,w);
     else if (item.markType==='triangle') outlinedPath(c,()=>{c.beginPath();c.moveTo(cx,cy-r*1.15);c.lineTo(cx+r,cy+r*.9);c.lineTo(cx-r,cy+r*.9);c.closePath()},author,w);
@@ -271,15 +280,15 @@
     else if (item.markType==='color-square') {
       c.save();
       c.fillStyle=safeColor(item.fill,'#ffcc33'); c.fillRect(cx-r,cy-r,2*r,2*r);
-      c.strokeStyle='#111';c.lineWidth=w+3;c.strokeRect(cx-r,cy-r,2*r,2*r);
+      c.strokeStyle='#111';c.lineWidth=w+1.4;c.strokeRect(cx-r,cy-r,2*r,2*r);
       c.strokeStyle=author;c.lineWidth=w;c.strokeRect(cx-r,cy-r,2*r,2*r);c.restore();
     } else if (item.markType==='number'||item.markType==='letter') {
       c.save();
       const text=String(item.label||'?').slice(0,3);
       c.font=`800 ${Math.max(12,step*.42)}px Inter,system-ui,sans-serif`;
       c.textAlign='center';c.textBaseline='middle';c.lineJoin='round';
-      c.strokeStyle='#111';c.lineWidth=Math.max(4,step*.11);c.strokeText(text,cx,cy);
-      c.strokeStyle=author;c.lineWidth=Math.max(2,step*.06);c.strokeText(text,cx,cy);
+      c.strokeStyle='#111';c.lineWidth=Math.max(2.4,step*.07);c.strokeText(text,cx,cy);
+      c.strokeStyle=author;c.lineWidth=Math.max(1.1,step*.032);c.strokeText(text,cx,cy);
       c.fillStyle='#fff';c.fillText(text,cx,cy);c.restore();
     }
   }
@@ -290,8 +299,8 @@
     const c=board.ctx, author=preview?participantColor(state.participantIndex):participantColor(item.authorIndex);
     const path=()=>{c.beginPath();c.moveTo(pad+pts[0].x*step,pad+pts[0].y*step);for(let i=1;i<pts.length;i++)c.lineTo(pad+pts[i].x*step,pad+pts[i].y*step)};
     c.save();c.lineCap='round';c.lineJoin='round';c.globalAlpha=preview?.75:.92;
-    c.strokeStyle=author;c.lineWidth=Math.max(5,step*.16);path();c.stroke();
-    c.strokeStyle=safeColor(item.color,'#e53935');c.lineWidth=Math.max(2,step*.085);path();c.stroke();c.restore();
+    c.strokeStyle=author;c.lineWidth=Math.max(3.2,step*.105);path();c.stroke();
+    c.strokeStyle=safeColor(item.color,'#e53935');c.lineWidth=Math.max(2,step*.075);path();c.stroke();c.restore();
   }
 
   function drawLayer() {
@@ -567,7 +576,14 @@
     board.draw();
   }
 
+  function clearAll(){
+    if(state.connected){send({type:'review-clear'});return}
+    state.items=[];
+    board.draw();
+  }
+
   undoButton.addEventListener('click',undoLast);
+  clearButton.addEventListener('click',clearAll);
   createButton.addEventListener('click',createRoom);
   leaveButton.addEventListener('click',leaveRoom);
   copyButton.addEventListener('click',async()=>{
@@ -589,6 +605,6 @@
   const initialRoom=new URL(location.href).searchParams.get('review');
   if(initialRoom) joinRoom(initialRoom);
 
-  window.goReview={state,setTool,createRoom,joinRoom,leaveRoom,undoLast};
+  window.goReview={state,setTool,createRoom,joinRoom,leaveRoom,undoLast,clearAll};
   board.draw();
 })();
