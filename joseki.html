@@ -10,11 +10,17 @@
   <div class="shell">
     <main class="josekiLayout">
       <aside class="leftPanel josekiSidebar">
+        <h1 class="josekiSidebarTitle">Джосеки</h1>
+
         <button id="backToMain" class="secondary sidebarPageButton" type="button" onclick="location.href='index.html'">
           Вернуться
         </button>
 
         <button id="activateJoseki" type="button">Активировать</button>
+        <button id="studyJoseki" type="button" disabled>Изучить</button>
+        <button id="finishJosekiStudy" class="secondary" type="button" hidden>Завершить обучение</button>
+
+        <div id="josekiStudyStatus" class="networkStatus" hidden></div>
 
         <div id="josekiStatus" class="networkStatus">
           Источник: Kogo's Joseki Dictionary.
@@ -22,7 +28,6 @@
       </aside>
 
       <section class="josekiWorkspace">
-        <h1>Джосеки</h1>
         <div class="boardWrap">
           <div class="boardColumn">
             <canvas id="board" aria-label="Доска Го — Джосеки"></canvas>
@@ -38,6 +43,6 @@
   <script src="board.js"></script>
   <script src="sgf.js"></script>
   <script src="tree.js"></script>
-  <script src="joseki-page.js?v=20261007-1"></script>
+  <script src="joseki-page.js?v=20261007-2"></script>
 </body>
 </html>
