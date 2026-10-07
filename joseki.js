@@ -44,6 +44,7 @@ function applyKogoNodeMetadata(treeNode, rawNode, size) {
 
   treeNode.josekiMeta = {
     ...(treeNode.josekiMeta || {}),
+    inLibrary: true,
     comment: comment || (treeNode.josekiMeta && treeNode.josekiMeta.comment) || "",
     labels: labels.length ? labels : ((treeNode.josekiMeta && treeNode.josekiMeta.labels) || []),
     hasContextSetup
@@ -97,7 +98,10 @@ function getCurrentJosekiSequence() {
   const gameTree = window.goGameTree;
   if (!gameTree || gameTree.current === gameTree.root) return [];
 
-  return gameTree.pathTo(gameTree.current).map(node => ({
+  const path = gameTree.pathTo(gameTree.current);
+  if (!path.length || path.some(node => !node.josekiMeta?.inLibrary)) return [];
+
+  return path.map(node => ({
     color: Number(node.move.color),
     pass: Boolean(node.move.pass),
     x: node.move.pass ? null : Number(node.move.x),
@@ -346,6 +350,63 @@ function handleStudyIntersection(x, y) {
   return true;
 }
 
+function updateJosekiStudyAvailability() {
+  const studyButton = document.getElementById("studyJoseki");
+  if (!studyButton) return;
+
+  if (!window.josekiModeActive || josekiStudy.active) {
+    studyButton.disabled = true;
+    return;
+  }
+
+  studyButton.disabled = getCurrentJosekiSequence().length === 0;
+}
+
+function findJosekiChildAt(x, y, pass = false) {
+  const gameTree = window.goGameTree;
+  if (!gameTree || !window.josekiModeActive) return null;
+
+  return gameTree.current.children.find(child =>
+    child.josekiMeta?.inLibrary &&
+    Boolean(child.move?.pass) === Boolean(pass) &&
+    (pass || (Number(child.move.x) === Number(x) && Number(child.move.y) === Number(y)))
+  ) || null;
+}
+
+function handleJosekiBrowseIntersection(x, y) {
+  if (!window.josekiModeActive || josekiStudy.active) return false;
+
+  const child = findJosekiChildAt(x, y, false);
+  if (!child) {
+    const status = document.getElementById("josekiStatus");
+    if (status) status.textContent = "Этого хода нет среди продолжений текущей позиции Kogo.";
+    return true;
+  }
+
+  if (typeof window.restoreJosekiTreePosition === "function") {
+    window.restoreJosekiTreePosition(child);
+  }
+  updateJosekiStudyAvailability();
+  return true;
+}
+
+function handleJosekiBrowsePass() {
+  if (!window.josekiModeActive || josekiStudy.active) return false;
+
+  const child = findJosekiChildAt(null, null, true);
+  if (!child) {
+    const status = document.getElementById("josekiStatus");
+    if (status) status.textContent = "Пас не является продолжением текущей позиции Kogo.";
+    return true;
+  }
+
+  if (typeof window.restoreJosekiTreePosition === "function") {
+    window.restoreJosekiTreePosition(child);
+  }
+  updateJosekiStudyAvailability();
+  return true;
+}
+
 function startJosekiStudy() {
   if (!window.josekiModeActive) return;
 
@@ -354,8 +415,9 @@ function startJosekiStudy() {
     const status = document.getElementById("josekiStudyStatus");
     if (status) {
       status.hidden = false;
-      status.textContent = "Сначала выберите в дереве позицию джосеки, которую хотите изучать.";
+      status.textContent = "Сначала разложите вариант джосеки по подсказкам или выберите его в дереве. Произвольные ходы в режиме джосеки не принимаются.";
     }
+    updateJosekiStudyAvailability();
     return;
   }
 
@@ -400,6 +462,7 @@ function finishJosekiStudy() {
 
   if (finishButton) finishButton.hidden = true;
   if (studyButton) studyButton.disabled = !window.josekiModeActive;
+  updateJosekiStudyAvailability();
   if (studyStatus) {
     studyStatus.hidden = true;
     studyStatus.textContent = "";
@@ -434,6 +497,7 @@ function deactivateJoseki() {
   if (activateButton) activateButton.textContent = "Активировать";
   if (studyButton) studyButton.disabled = true;
   if (status) status.textContent = "Источник: Kogo's Joseki Dictionary.";
+  updateJosekiStudyAvailability();
 }
 
 (function setupJosekiPanel() {
@@ -482,7 +546,7 @@ function deactivateJoseki() {
 
       const variants = window.goGameTree?.current?.children?.length || 0;
       activateButton.textContent = "Деактивировать";
-      if (studyButton) studyButton.disabled = false;
+      updateJosekiStudyAvailability();
 
       status.textContent =
         `${JOSEKI_LIBRARY_NAME} активирован. В дереве ${result.nodeCount} узлов. ` +
@@ -499,6 +563,9 @@ function deactivateJoseki() {
   if (finishButton) finishButton.addEventListener("click", finishJosekiStudy);
 })();
 
+window.handleJosekiBrowseIntersection = handleJosekiBrowseIntersection;
+window.handleJosekiBrowsePass = handleJosekiBrowsePass;
 window.handleJosekiStudyIntersection = handleStudyIntersection;
 window.handleJosekiStudyPass = handleStudyPass;
+window.updateJosekiStudyAvailability = updateJosekiStudyAvailability;
 window.finishJosekiStudy = finishJosekiStudy;
