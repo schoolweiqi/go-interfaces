@@ -227,7 +227,6 @@ window.stoneSound = (() => {
       stoneSoundVolumeInput.value = String(window.stoneSound.setVolume(stoneSoundVolumeInput.value));
     });
     const sizeSelect = document.getElementById('size');
-    const speedSelect = document.getElementById('speed');
     const gameMsg = document.getElementById('gameMsg');
     const blackCaptures = document.getElementById('blackCaptures');
     const whiteCaptures = document.getElementById('whiteCaptures');
