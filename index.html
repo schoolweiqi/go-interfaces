@@ -15,9 +15,9 @@
         максимум доступной ширины и высоты окна.
       -->
       <aside class="leftPanel">
-        <div class="sidebarLogo" aria-label="Школа Го Алексея Нечаева">
+        <button id="schoolLogoButton" class="sidebarLogo" type="button" aria-label="О проекте и школе Го" aria-haspopup="dialog">
           <img src="school-go-logo-site.webp" alt="Школа Го Алексея Нечаева">
-        </div>
+        </button>
         <section class="panel modesPanel">
           <h2 class="panelHeading">
             <button class="panelToggle" type="button" aria-expanded="false" aria-controls="modesPanelBody">
@@ -268,6 +268,31 @@
         </div>
       </section>
     </main>
+  </div>
+
+  <div id="aboutModal" class="aboutModal" hidden>
+    <div class="aboutModalBackdrop" data-about-close></div>
+    <section
+      class="aboutModalDialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="aboutModalTitle"
+    >
+      <button id="aboutModalClose" class="aboutModalClose" type="button" aria-label="Закрыть">×</button>
+      <h2 id="aboutModalTitle">О проекте</h2>
+      <p>
+        Этот сайт стал результатом моих идей по тому как помочь ученикам понять игру
+        в реалиях современного мира визуальных образов.
+      </p>
+      <p>
+        Группа школы Го<br>
+        <a href="https://t.me/art_of_game_Go" target="_blank" rel="noopener noreferrer">https://t.me/art_of_game_Go</a>
+      </p>
+      <p>
+        Учитель Го<br>
+        <a href="https://t.me/Alexey_Nechaev_Go" target="_blank" rel="noopener noreferrer">https://t.me/Alexey_Nechaev_Go</a>
+      </p>
+    </section>
   </div>
 
   <script src="accordion.js"></script>
