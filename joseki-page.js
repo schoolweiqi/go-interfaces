@@ -4,6 +4,8 @@
 
 const JOSEKI_LIBRARY_NAME = "Josekipedia";
 const JOSEKIPEDIA_DB_URL = "data/joseki/josekipedia.json?v=20261007-1";
+const JOSEKIPEDIA_MANIFEST_URL = "data/joseki/josekipedia/manifest.json?v=20261007-1";
+const JOSEKIPEDIA_SHARD_BASE = "data/joseki/josekipedia/shards";
 const JOSEKIPEDIA_NODE_URL = "https://www.josekipedia.com/db/node.php";
 let STUDY_ROUND_COUNT = 6;
 
@@ -48,8 +50,10 @@ const josekiPause = {
 
 let active = false;
 let localDb = null;
+let localManifest = null;
 let sourceMode = "none";
 const nodeCache = new Map();
+const shardCache = new Map();
 
 const browse = {
   rootId: 1,
@@ -170,10 +174,48 @@ async function fetchLiveNode(id) {
   return normalizeLiveNode(await response.json());
 }
 
+function josekipediaShardIndex(id) {
+  const count = Number(localManifest?.shardCount || 0);
+  if (!count) return null;
+  return Math.abs(Number(id)) % count;
+}
+
+async function loadShard(index) {
+  const key = Number(index);
+  if (shardCache.has(key)) return shardCache.get(key);
+
+  const name = String(key).padStart(3, "0") + ".json";
+  const response = await fetch(`${JOSEKIPEDIA_SHARD_BASE}/${name}?v=${encodeURIComponent(localManifest?.generatedAt || "")}`, {
+    cache: "no-store"
+  });
+
+  if (!response.ok) {
+    if (response.status === 404) {
+      shardCache.set(key, {});
+      return {};
+    }
+    throw new Error(`Shard Josekipedia ${name}: HTTP ${response.status}`);
+  }
+
+  const shard = await response.json();
+  shardCache.set(key, shard && typeof shard === "object" ? shard : {});
+  return shardCache.get(key);
+}
+
 async function getNode(id) {
   const key = String(id);
-
   if (nodeCache.has(key)) return nodeCache.get(key);
+
+  if (localManifest) {
+    const index = josekipediaShardIndex(id);
+    const shard = await loadShard(index);
+    if (shard?.[key]) {
+      const node = normalizeStoredNode(shard[key]);
+      nodeCache.set(key, node);
+      return node;
+    }
+    return null;
+  }
 
   if (localDb?.nodes?.[key]) {
     const node = normalizeStoredNode(localDb.nodes[key]);
@@ -186,8 +228,27 @@ async function getNode(id) {
 
 async function loadJosekipediaSource() {
   localDb = null;
+  localManifest = null;
   nodeCache.clear();
+  shardCache.clear();
 
+  // Prefer the resumable sharded database as soon as its first checkpoint exists.
+  const manifestResponse = await fetch(JOSEKIPEDIA_MANIFEST_URL, { cache: "no-store" });
+  if (manifestResponse.ok) {
+    const manifest = await manifestResponse.json();
+    if (!Number.isFinite(Number(manifest?.shardCount)) || Number(manifest.shardCount) < 1) {
+      throw new Error("Некорректный manifest локальной Josekipedia.");
+    }
+
+    localManifest = manifest;
+    sourceMode = "sharded";
+
+    const root = await getNode(Number(manifest.rootId || 1));
+    if (!root) throw new Error("В sharded-базе Josekipedia нет корневого узла.");
+    return;
+  }
+
+  // Until the first checkpoint is committed, keep using the old seed.
   const response = await fetch(JOSEKIPEDIA_DB_URL, { cache: "no-store" });
   if (!response.ok) {
     throw new Error(`Локальная база Josekipedia недоступна: HTTP ${response.status}`);
@@ -199,7 +260,7 @@ async function loadJosekipediaSource() {
   }
 
   localDb = db;
-  sourceMode = "local";
+  sourceMode = "legacy";
 }
 
 function resetBoard() {
@@ -261,16 +322,11 @@ async function buildChoicesForNode(node) {
   const byPoint = new Map();
 
   for (const edge of rawEdges) {
-    if (localDb && !localDb.nodes?.[String(edge.id)]) continue;
-
     let move = edge.move ? { ...edge.move } : null;
 
-    if (!move && localDb?.nodes?.[String(edge.id)]) {
-      move = normalizeMove(localDb.nodes[String(edge.id)]?.move);
-    }
-
-    if (!move && nodeCache.has(String(edge.id))) {
-      move = nodeCache.get(String(edge.id))?.move || null;
+    if (!move) {
+      const target = await getNode(edge.id);
+      move = target?.move ? { ...target.move } : null;
     }
 
     if (!move) continue;
@@ -334,9 +390,11 @@ async function refreshChoices() {
     }))
   );
 
-  const sourceText = sourceMode === "local"
-    ? `локальная база · ${localDb.nodeCount || Object.keys(localDb.nodes || {}).length} узлов`
-    : "Josekipedia API";
+  const sourceText = sourceMode === "sharded"
+    ? `локальная база · ${Number(localManifest?.nodeCount || 0).toLocaleString("ru-RU")} узлов${localManifest?.complete ? " · полная" : " · загрузка продолжается"}`
+    : sourceMode === "legacy"
+      ? `локальный seed · ${localDb.nodeCount || Object.keys(localDb.nodes || {}).length} узлов`
+      : "Josekipedia";
 
   status.textContent =
     `${JOSEKI_LIBRARY_NAME} · ${sourceText} · текущий ход ${browse.path.length} · вариантов базы: ${browse.choices.length}. Свободный ход также разрешён.`;
@@ -769,7 +827,7 @@ async function activate() {
   try {
     await loadJosekipediaSource();
 
-    browse.rootId = Number(localDb?.rootId || 1);
+    browse.rootId = Number(localManifest?.rootId || localDb?.rootId || 1);
     browse.currentId = browse.rootId;
     browse.path = [];
 
