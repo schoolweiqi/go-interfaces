@@ -235,7 +235,7 @@ async function buildChoicesForNode(node) {
   if (!node) return [];
 
   const nextColor = expectedNextColor();
-  const rawEdges = [...(node.children || []), ...(node.ghosts || [])];
+  const rawEdges = [...(node.children || [])];
   const byPoint = new Map();
 
   for (const edge of rawEdges) {
