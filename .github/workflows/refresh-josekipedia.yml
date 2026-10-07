@@ -1,0 +1,57 @@
+name: Refresh Josekipedia database
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/fetch-josekipedia.mjs"
+      - ".github/workflows/refresh-josekipedia.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Fetch full Josekipedia graph
+        env:
+          JOSEKIPEDIA_CONCURRENCY: "8"
+          JOSEKIPEDIA_RETRIES: "6"
+          JOSEKIPEDIA_TIMEOUT_MS: "20000"
+        run: node scripts/fetch-josekipedia.mjs
+
+      - name: Verify database
+        run: |
+          set -euo pipefail
+          test -s data/joseki/josekipedia.json
+          node - <<'NODE'
+          const fs = require("fs");
+          const db = JSON.parse(fs.readFileSync("data/joseki/josekipedia.json", "utf8"));
+          if (!db.nodes || !db.nodes["1"]) throw new Error("Josekipedia root node is missing");
+          if (!Number.isFinite(db.nodeCount) || db.nodeCount < 1000) throw new Error("Josekipedia dump is unexpectedly small");
+          console.log("Josekipedia nodes:", db.nodeCount);
+          NODE
+
+      - name: Commit database
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/joseki/josekipedia.json
+          if git diff --cached --quiet; then
+            echo "Josekipedia database already up to date"
+            exit 0
+          fi
+          git commit -m "Refresh local Josekipedia database"
+          git push
