@@ -110,16 +110,25 @@ async function main() {
   const nodes = new Map();
   let processed = 0;
 
-  async function worker() {
-    while (true) {
+  while (queue.length) {
+    const ids = [];
+
+    while (queue.length && ids.length < CONCURRENCY) {
       const id = queue.shift();
-      if (id == null) return;
       queued.delete(id);
       if (visited.has(id)) continue;
       visited.add(id);
+      ids.push(id);
+    }
 
+    if (!ids.length) continue;
+
+    const batch = await Promise.all(ids.map(async id => {
       const raw = await fetchNode(id);
-      const compact = compactNode(raw);
+      return [id, compactNode(raw)];
+    }));
+
+    for (const [id, compact] of batch) {
       nodes.set(id, compact);
       processed += 1;
 
@@ -130,16 +139,11 @@ async function main() {
         queue.push(edge.id);
         queued.add(edge.id);
       }
-
-      if (processed % 250 === 0) {
-        console.log(`Fetched ${processed} nodes; queued ${queue.length}`);
-      }
     }
-  }
 
-  while (queue.length) {
-    const batch = Math.min(CONCURRENCY, queue.length);
-    await Promise.all(Array.from({ length: batch }, () => worker()));
+    if (processed % 250 < ids.length) {
+      console.log(`Fetched ${processed} nodes; queued ${queue.length}`);
+    }
   }
 
   const orderedNodes = Object.fromEntries(
