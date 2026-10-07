@@ -42,6 +42,47 @@ export default {
     const url = new URL(request.url);
     const parts = url.pathname.split("/").filter(Boolean);
 
+    if (request.method === "GET" && url.pathname === "/api/ogs-joseki/node") {
+      const id = String(url.searchParams.get("id") || "").trim();
+      if (!/^(?:root|\d+)$/.test(id)) {
+        return json({ error: "Некорректный OGS Joseki node id" }, 400, cors(origin));
+      }
+
+      const upstream = new URL("https://online-go.com/oje/position");
+      upstream.searchParams.set("id", id);
+      upstream.searchParams.set("mode", "0");
+
+      try {
+        const response = await fetch(upstream.href, {
+          method: "GET",
+          headers: {
+            "Accept": "application/json",
+            "User-Agent": "SchoolWeiqi-GoInterfaces/1.0"
+          }
+        });
+
+        const text = await response.text();
+        if (!response.ok) {
+          return json(
+            { error: `OGS Joseki API: HTTP ${response.status}` },
+            response.status >= 400 && response.status < 600 ? response.status : 502,
+            cors(origin)
+          );
+        }
+
+        return new Response(text, {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json; charset=utf-8",
+            "Cache-Control": "public, max-age=300",
+            ...cors(origin)
+          }
+        });
+      } catch (error) {
+        return json({ error: `OGS Joseki недоступен: ${error.message}` }, 502, cors(origin));
+      }
+    }
+
     if (request.method === "POST" && url.pathname === "/api/rooms") {
       let body = {};
       try { body = await request.json(); } catch (_) {}
