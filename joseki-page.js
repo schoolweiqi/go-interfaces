@@ -79,7 +79,7 @@ function normalizeMove(raw, fallbackPoint = null, fallbackColor = null) {
   try {
     const xy = sgfPointToXY(point, 19);
     return {
-      color: color === 2 ? 2 : 1,
+      color: color === 2 ? 2 : (color === 1 ? 1 : null),
       pass: Boolean(xy.pass),
       x: xy.pass ? null : xy.x,
       y: xy.pass ? null : xy.y,
