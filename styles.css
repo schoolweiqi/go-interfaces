@@ -502,3 +502,20 @@ canvas {
 .josekiWorkspace .boardWrap {
   flex: 1 1 auto;
 }
+
+
+/* Joseki page: title lives in sidebar so the board can use the full viewport height. */
+.josekiSidebarTitle {
+  margin: 0 0 2px;
+  font-size: 24px;
+  line-height: 1.2;
+}
+.josekiPage .josekiSidebar {
+  padding-top: 0;
+}
+.josekiPage .josekiWorkspace .boardWrap {
+  height: 100%;
+}
+.josekiPage .josekiWorkspace .boardColumn {
+  width: min(100%, calc(100vh - 10px));
+}
