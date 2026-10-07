@@ -506,23 +506,52 @@ window.movePause = (() => {
       sgfFileInput.click();
     });
 
+    function loadSgfTextIntoGame(text, options = {}) {
+      if (botGame.active) stopBotGame();
+      if (networkGame.active && typeof leaveNetworkGame === 'function') leaveNetworkGame();
+      if (typeof ogsGame !== 'undefined' && ogsGame.active && typeof disconnectOgsGame === 'function') {
+        disconnectOgsGame(false);
+      }
+      gameMode = 'local';
+
+      const parsed = parseSgfGameWithVariations(text);
+      gameTree.importSgf(parsed);
+
+      // Обычный файл открывается в конце главной вариации. Импортёр джосеки
+      // может попросить остановиться на исходной позиции выбранного поддерева.
+      let target = gameTree.current;
+      if (Number.isFinite(Number(options.focusDepth))) {
+        const wantedDepth = Math.max(0, Math.floor(Number(options.focusDepth)));
+        target = gameTree.root;
+        while (target.depth < wantedDepth && target.children.length) {
+          target = target.preferredChild && target.children.includes(target.preferredChild)
+            ? target.preferredChild
+            : target.children[0];
+        }
+      }
+
+      restoreTreePosition(target);
+
+      const sourceName = options.sourceName || 'SGF';
+      gameMsg.textContent =
+        `${sourceName} загружен. Текущий ход: ${gameTree.current.depth}. Узлов в дереве: ${gameTree.nodes.size}.`;
+
+      return {
+        nodeCount: gameTree.nodes.size,
+        currentDepth: gameTree.current.depth,
+        size: gameTree.meta.size
+      };
+    }
+
+    window.loadSgfTextIntoGame = loadSgfTextIntoGame;
+
     sgfFileInput.addEventListener('change', async () => {
       const file = sgfFileInput.files && sgfFileInput.files[0];
       if (!file) return;
 
       try {
-        if (botGame.active) stopBotGame();
-        if (networkGame.active && typeof leaveNetworkGame === 'function') leaveNetworkGame();
-        gameMode = 'local';
-
         const text = await file.text();
-        const parsed = parseSgfGameWithVariations(text);
-
-        // Импортируем ВСЁ дерево SGF. Текущим становится конец главной вариации.
-        gameTree.importSgf(parsed);
-        restoreTreePosition(gameTree.current);
-
-        gameMsg.textContent = `SGF загружен: ${file.name}. Ходов в текущей линии: ${gameTree.current.depth}.`;
+        loadSgfTextIntoGame(text, { sourceName: `SGF ${file.name}` });
       } catch (error) {
         gameMsg.textContent = `Не удалось загрузить SGF: ${error.message}`;
       }
