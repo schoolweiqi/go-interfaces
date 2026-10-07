@@ -44,15 +44,23 @@ main {
   min-height: 0;
   padding: 0 4px;
   margin: 0;
-  border: 0;
-  background: transparent;
+  border: 0 !important;
+  border-radius: 0;
+  background: #17191b !important;
+  box-shadow: none !important;
+  appearance: none;
+  -webkit-appearance: none;
   cursor: pointer;
 }
-.leftPanel .sidebarLogo {
+.leftPanel .sidebarLogo,
+.leftPanel .sidebarLogo:hover,
+.leftPanel .sidebarLogo:active,
+.leftPanel .sidebarLogo:focus {
   min-height: 0;
   padding: 0 4px;
-  background: transparent;
-  border: 0;
+  border: 0 !important;
+  background: #17191b !important;
+  box-shadow: none !important;
 }
 .sidebarLogo img {
   display: block;

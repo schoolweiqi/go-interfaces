@@ -155,33 +155,6 @@ window.stoneSound = (() => {
   };
 })();
 
-const schoolLogoButton = document.getElementById('schoolLogoButton');
-const aboutModal = document.getElementById('aboutModal');
-const aboutModalClose = document.getElementById('aboutModalClose');
-
-function openAboutModal() {
-  if (!aboutModal) return;
-  aboutModal.hidden = false;
-  document.body.classList.add('modalOpen');
-  aboutModalClose?.focus();
-}
-
-function closeAboutModal() {
-  if (!aboutModal || aboutModal.hidden) return;
-  aboutModal.hidden = true;
-  document.body.classList.remove('modalOpen');
-  schoolLogoButton?.focus();
-}
-
-schoolLogoButton?.addEventListener('click', openAboutModal);
-aboutModalClose?.addEventListener('click', closeAboutModal);
-aboutModal?.addEventListener('click', (event) => {
-  if (event.target && event.target.matches('[data-about-close]')) closeAboutModal();
-});
-document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && aboutModal && !aboutModal.hidden) closeAboutModal();
-});
-
     const board = new GoBoard(document.getElementById('board'), 19);
     window.goBoardInstance = board;
     const boardCleanBtn = document.getElementById('boardClean');
