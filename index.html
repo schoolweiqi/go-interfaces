@@ -88,13 +88,47 @@
             </button>
           </h2>
           <div id="ogsPanelBody" class="panelBody" hidden>
-          <div class="ogsPreset">19 × 19 · Japanese · Live · byo-yomi</div>
+          <div class="ogsPreset">Japanese · без гандикапа · byo-yomi</div>
 
           <div class="row ogsAuthActions">
             <button id="login" type="button">Подключиться к OGS</button>
             <button id="logout" class="secondary" type="button" hidden>Отключиться</button>
           </div>
           <div id="authMsg" class="msg">Не подключено к OGS.</div>
+
+          <div class="ogsSearchSettings">
+            <div class="ogsSearchSettingsTitle">Настройки поиска соперника</div>
+
+            <label>
+              Размер доски
+              <select id="ogsSearchSize">
+                <option value="9">9 × 9</option>
+                <option value="13">13 × 13</option>
+                <option value="19" selected>19 × 19</option>
+              </select>
+            </label>
+
+            <label>
+              Скорость
+              <select id="ogsSearchSpeed">
+                <option value="rapid">Rapid</option>
+                <option value="live" selected>Live</option>
+              </select>
+            </label>
+
+            <div id="ogsSearchTimeHint" class="ogsSearchTimeHint"></div>
+
+            <div class="ogsRankRange">
+              <label>
+                Слабее на
+                <input id="ogsSearchLowerRank" type="number" min="0" max="9" step="1" value="3">
+              </label>
+              <label>
+                Сильнее на
+                <input id="ogsSearchUpperRank" type="number" min="0" max="9" step="1" value="3">
+              </label>
+            </div>
+          </div>
 
           <label class="ogsPlayerLinkLabel" for="ogsChallengePlayerUrl">Ссылка на бота или игрока</label>
           <input
@@ -157,8 +191,6 @@
         </section>
 
         <div hidden aria-hidden="true">
-          <select id="size"><option value="19">19</option><option value="13">13</option><option value="9">9</option></select>
-          <select id="speed"><option value="live">Live</option></select>
           <button id="newGame"></button>
         </div>
 
