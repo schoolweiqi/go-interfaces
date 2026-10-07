@@ -297,8 +297,10 @@ async function restoreBrowsePosition() {
     ? browse.path[browse.path.length - 1].childId
     : browse.rootId;
 
-  await refreshChoices();
+  // Draw the restored stones immediately. Loading the next Josekipedia shard
+  // may take noticeable time; the current position must stay visible meanwhile.
   board.draw();
+  await refreshChoices();
 }
 
 function currentSequence() {
