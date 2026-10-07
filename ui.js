@@ -262,11 +262,20 @@ window.movePause = (() => {
         return;
       }
 
+      const currentMeta = gameTree.current.josekiMeta || {};
+      const kogoLabels = Array.isArray(currentMeta.labels) ? currentMeta.labels : [];
+
       const choices = gameTree.current.children
         .filter(child => child.move && !child.move.pass)
         .map((child, index) => {
           const meta = child.josekiMeta || {};
-          const rawLabel = String(meta.label == null ? '' : meta.label);
+          const pointLabel = kogoLabels.find(entry =>
+            Number(entry.x) === Number(child.move.x) &&
+            Number(entry.y) === Number(child.move.y)
+          );
+          const rawLabel = pointLabel
+            ? String(pointLabel.label || '')
+            : String(meta.label == null ? '' : meta.label);
           const label = rawLabel && rawLabel !== '_'
             ? rawLabel
             : String(index + 1);
