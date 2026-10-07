@@ -267,8 +267,8 @@ window.movePause = (() => {
         .map((child, index) => {
           const meta = child.josekiMeta || {};
           const rawLabel = String(meta.label == null ? '' : meta.label);
-          const label = meta.nodeId
-            ? (rawLabel === '_' ? '' : rawLabel)
+          const label = rawLabel && rawLabel !== '_'
+            ? rawLabel
             : String(index + 1);
 
           return {
