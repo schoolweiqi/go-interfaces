@@ -1878,6 +1878,26 @@ loginButton.addEventListener("click", () => {
     authMsg.textContent = "Ошибка OAuth: " + error.message;
   });
 });
+
+findButton.addEventListener("click", () => {
+  try {
+    startAutomatch();
+  } catch (error) {
+    activeAutomatchUuid = null;
+    setOgsStatus("Не удалось запустить поиск: " + error.message);
+    refreshOgsControls();
+  }
+});
+
+cancelButton.addEventListener("click", () => {
+  try {
+    cancelAutomatch();
+  } catch (error) {
+    setOgsStatus("Не удалось отменить поиск: " + error.message);
+    refreshOgsControls();
+  }
+});
+
 logoutButton.addEventListener("click", logoutOgs);
 ogsBotButton.addEventListener("click", () => {
   startOgsBotChallenge().catch((error) => {
