@@ -48,7 +48,7 @@ export default {
         return json({ error: "Некорректный OGS Joseki node id" }, 400, cors(origin));
       }
 
-      const upstream = new URL("https://online-go.com/oje/position");
+      const upstream = new URL("https://online-go.com/oje/positions");
       upstream.searchParams.set("id", id);
       upstream.searchParams.set("mode", "0");
 
