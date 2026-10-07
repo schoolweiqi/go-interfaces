@@ -1,0 +1,151 @@
+name: Seed Josekipedia from public export
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/seed-josekipedia-export.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Clone public Josekipedia export
+        run: git clone --depth 1 https://github.com/joeykblack/gorecall.git /tmp/gorecall
+
+      - name: Build compact local database
+        run: |
+          node <<'NODE'
+          const fs = require("fs");
+          const path = require("path");
+
+          const sourceRoot = "/tmp/gorecall/josekipedia";
+          const out = "data/joseki/josekipedia.json";
+          const typeNames = {
+            0: "IDEAL",
+            1: "GOOD",
+            2: "MISTAKE",
+            3: "TRICK",
+            4: "QUESTION"
+          };
+
+          function walk(dir, result = []) {
+            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+              const p = path.join(dir, entry.name);
+              if (entry.isDirectory()) walk(p, result);
+              else if (entry.isFile() && /\.json$/i.test(entry.name)) result.push(p);
+            }
+            return result;
+          }
+
+          function normalizeEdge(raw) {
+            if (!raw) return null;
+            const id = Number(raw._id ?? raw.id);
+            if (!Number.isFinite(id)) return null;
+            const move = raw.B
+              ? { color: 1, point: String(raw.B) }
+              : raw.W
+                ? { color: 2, point: String(raw.W) }
+                : null;
+            return {
+              id,
+              move,
+              type: Number.isFinite(Number(raw._mtype)) ? Number(raw._mtype) : null
+            };
+          }
+
+          function compactNode(raw) {
+            const children = Array.isArray(raw?._children)
+              ? raw._children.map(normalizeEdge).filter(Boolean)
+              : [];
+            const ghosts = Array.isArray(raw?._ghosts)
+              ? raw._ghosts.map(item => ({
+                  id: Number(item.id),
+                  move: item.loc ? { color: null, point: String(item.loc) } : null,
+                  type: Number.isFinite(Number(item.mtype)) ? Number(item.mtype) : null
+                })).filter(edge => Number.isFinite(edge.id))
+              : [];
+            return {
+              id: Number(raw._id),
+              type: Number.isFinite(Number(raw._mtype)) ? Number(raw._mtype) : null,
+              move: raw?.B
+                ? { color: 1, point: String(raw.B) }
+                : raw?.W
+                  ? { color: 2, point: String(raw.W) }
+                  : null,
+              children,
+              ghosts
+            };
+          }
+
+          const nodes = {};
+          for (const file of walk(sourceRoot)) {
+            let raw;
+            try {
+              raw = JSON.parse(fs.readFileSync(file, "utf8"));
+            } catch {
+              continue;
+            }
+            const id = Number(raw?._id);
+            if (!Number.isFinite(id)) continue;
+            nodes[String(id)] = compactNode(raw);
+          }
+
+          if (!nodes["1"]) throw new Error("Public export does not contain root node 1");
+
+          const ordered = Object.fromEntries(
+            Object.entries(nodes).sort((a, b) => Number(a[0]) - Number(b[0]))
+          );
+
+          const payload = {
+            schema: 1,
+            source: "Josekipedia",
+            sourceUrl: "https://www.josekipedia.com/",
+            exportSource: "https://github.com/joeykblack/gorecall",
+            exportScope: "public partial export used as local seed; missing nodes are fetched from Josekipedia API until the full local crawl replaces this file",
+            rootId: 1,
+            generatedAt: new Date().toISOString(),
+            moveTypes: typeNames,
+            nodeCount: Object.keys(ordered).length,
+            nodes: ordered
+          };
+
+          fs.mkdirSync(path.dirname(out), { recursive: true });
+          fs.writeFileSync(out, JSON.stringify(payload), "utf8");
+          console.log("Seed nodes:", payload.nodeCount);
+          NODE
+
+      - name: Keep a fuller database if one already exists
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          if git show origin/main:data/joseki/josekipedia.json >/tmp/existing.json 2>/dev/null; then
+            existing_count=$(node -p 'JSON.parse(require("fs").readFileSync("/tmp/existing.json","utf8")).nodeCount || 0')
+            seed_count=$(node -p 'JSON.parse(require("fs").readFileSync("data/joseki/josekipedia.json","utf8")).nodeCount || 0')
+            echo "Existing nodes: $existing_count; seed nodes: $seed_count"
+            if [ "$existing_count" -ge "$seed_count" ]; then
+              git show origin/main:data/joseki/josekipedia.json > data/joseki/josekipedia.json
+            fi
+          fi
+
+      - name: Commit seed database
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git pull --rebase origin main
+          git add data/joseki/josekipedia.json
+          if git diff --cached --quiet; then
+            echo "Josekipedia database already present"
+            exit 0
+          fi
+          git commit -m "Seed Josekipedia database from public export"
+          git push
