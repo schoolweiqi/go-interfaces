@@ -1,12 +1,21 @@
-// Standalone joseki page.
-// Intentionally isolated from the main application's game/OGS/bot/network controllers.
+// Standalone Josekipedia page.
+// Uses a local full Josekipedia dump when available and falls back to Josekipedia's
+// public node endpoint while the dump is being generated.
 
-const JOSEKI_LIBRARY_NAME = "Kogo's Joseki Dictionary";
-const JOSEKI_SGF_URL = "data/joseki/Kogo%27s%20Joseki%20Dictionary.sgf?v=20261007-2";
+const JOSEKI_LIBRARY_NAME = "Josekipedia";
+const JOSEKIPEDIA_DB_URL = "data/joseki/josekipedia.json?v=20261007-1";
+const JOSEKIPEDIA_NODE_URL = "https://www.josekipedia.com/db/node.php";
 const STUDY_ROUND_COUNT = 6;
 
+const TYPE_NAMES = {
+  0: "IDEAL",
+  1: "GOOD",
+  2: "MISTAKE",
+  3: "TRICK",
+  4: "QUESTION"
+};
+
 const board = new GoBoard(document.getElementById("board"), 19);
-const gameTree = new GameTree({ size: 19, komi: 0, initialTurn: 1 });
 const activateButton = document.getElementById("activateJoseki");
 const studyButton = document.getElementById("studyJoseki");
 const finishStudyButton = document.getElementById("finishJosekiStudy");
@@ -14,6 +23,16 @@ const status = document.getElementById("josekiStatus");
 const studyStatus = document.getElementById("josekiStudyStatus");
 
 let active = false;
+let localDb = null;
+let sourceMode = "none";
+const nodeCache = new Map();
+
+const browse = {
+  rootId: 1,
+  currentId: 1,
+  path: [],
+  choices: []
+};
 
 const study = {
   active: false,
@@ -25,143 +44,299 @@ const study = {
   roundIndex: 0,
   moveIndex: 0,
   firstHumanMoveIndex: -1,
-  savedTreeNode: null
+  savedPath: []
 };
 
-function extractLabels(rawNode, size) {
-  if (!rawNode || !Array.isArray(rawNode.LB)) return [];
-
-  return rawNode.LB.map(value => {
-    const text = String(value || "");
-    const split = text.indexOf(":");
-    if (split <= 0) return null;
-
-    try {
-      const point = sgfPointToXY(text.slice(0, split), size);
-      if (point.pass) return null;
-      return { x: point.x, y: point.y, label: text.slice(split + 1) };
-    } catch (_) {
-      return null;
-    }
-  }).filter(Boolean);
+function oppositeColor(color) {
+  return Number(color) === 2 ? 1 : 2;
 }
 
-function decorateTree(rawTree) {
-  const queue = [{ rawTree, treeNode: gameTree.root }];
+function expectedNextColor() {
+  if (!browse.path.length) return 1;
+  return oppositeColor(browse.path[browse.path.length - 1].move.color);
+}
 
-  while (queue.length) {
-    const { rawTree: rt, treeNode } = queue.shift();
-    let cursor = treeNode;
+function normalizeMove(raw, fallbackPoint = null, fallbackColor = null) {
+  if (!raw && !fallbackPoint) return null;
 
-    for (const rawNode of (rt.sequence || [])) {
-      const move = moveFromSgfNode(rawNode, gameTree.meta.size);
+  let color = fallbackColor;
+  let point = fallbackPoint;
 
-      if (!move) {
-        const labels = extractLabels(rawNode, gameTree.meta.size);
-        if (labels.length) {
-          cursor.josekiMeta = { ...(cursor.josekiMeta || {}), labels };
-        }
-        continue;
-      }
-
-      const child = cursor.children.find(candidate => gameTree.sameMove(candidate.move, move));
-      if (!child) continue;
-
-      cursor = child;
-      const labels = extractLabels(rawNode, gameTree.meta.size);
-      cursor.josekiMeta = {
-        ...(cursor.josekiMeta || {}),
-        labels: labels.length ? labels : ((cursor.josekiMeta && cursor.josekiMeta.labels) || [])
-      };
+  if (raw) {
+    if (raw.color === 1 || raw.color === 2) color = Number(raw.color);
+    if (raw.point != null) point = String(raw.point);
+    if (raw.B) {
+      color = 1;
+      point = String(raw.B);
+    } else if (raw.W) {
+      color = 2;
+      point = String(raw.W);
     }
+  }
 
-    for (const variation of (rt.variations || [])) {
-      queue.push({ rawTree: variation, treeNode: cursor });
-    }
+  if (!point) return null;
+
+  try {
+    const xy = sgfPointToXY(point, 19);
+    return {
+      color: color === 2 ? 2 : 1,
+      pass: Boolean(xy.pass),
+      x: xy.pass ? null : xy.x,
+      y: xy.pass ? null : xy.y,
+      point
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
+function normalizeStoredNode(raw) {
+  if (!raw) return null;
+  return {
+    id: Number(raw.id),
+    type: Number.isFinite(Number(raw.type)) ? Number(raw.type) : null,
+    move: normalizeMove(raw.move),
+    children: Array.isArray(raw.children) ? raw.children.map(edge => ({
+      id: Number(edge.id),
+      type: Number.isFinite(Number(edge.type)) ? Number(edge.type) : null,
+      move: normalizeMove(edge.move)
+    })).filter(edge => Number.isFinite(edge.id)) : [],
+    ghosts: Array.isArray(raw.ghosts) ? raw.ghosts.map(edge => ({
+      id: Number(edge.id),
+      type: Number.isFinite(Number(edge.type)) ? Number(edge.type) : null,
+      move: normalizeMove(edge.move, edge.move?.point || null, null)
+    })).filter(edge => Number.isFinite(edge.id)) : []
+  };
+}
+
+function normalizeLiveNode(raw) {
+  if (!raw) return null;
+
+  const children = Array.isArray(raw._children)
+    ? raw._children.map(edge => ({
+        id: Number(edge._id ?? edge.id),
+        type: Number.isFinite(Number(edge._mtype)) ? Number(edge._mtype) : null,
+        move: normalizeMove(edge)
+      })).filter(edge => Number.isFinite(edge.id))
+    : [];
+
+  const ghosts = Array.isArray(raw._ghosts)
+    ? raw._ghosts.map(edge => ({
+        id: Number(edge.id),
+        type: Number.isFinite(Number(edge.mtype)) ? Number(edge.mtype) : null,
+        move: normalizeMove(null, edge.loc ? String(edge.loc) : null, null)
+      })).filter(edge => Number.isFinite(edge.id))
+    : [];
+
+  return {
+    id: Number(raw._id),
+    type: Number.isFinite(Number(raw._mtype)) ? Number(raw._mtype) : null,
+    move: normalizeMove(raw),
+    children,
+    ghosts
+  };
+}
+
+async function fetchLiveNode(id) {
+  const url = `${JOSEKIPEDIA_NODE_URL}?id=${encodeURIComponent(id)}&pid=0`;
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) throw new Error(`Josekipedia API: HTTP ${response.status}`);
+  return normalizeLiveNode(await response.json());
+}
+
+async function getNode(id) {
+  const key = String(id);
+
+  if (nodeCache.has(key)) return nodeCache.get(key);
+
+  if (localDb?.nodes?.[key]) {
+    const node = normalizeStoredNode(localDb.nodes[key]);
+    nodeCache.set(key, node);
+    return node;
+  }
+
+  const node = await fetchLiveNode(id);
+  nodeCache.set(key, node);
+  return node;
+}
+
+async function loadJosekipediaSource() {
+  localDb = null;
+  nodeCache.clear();
+
+  try {
+    const response = await fetch(JOSEKIPEDIA_DB_URL, { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const db = await response.json();
+    if (!db?.nodes?.["1"]) throw new Error("В локальной базе нет корневого узла.");
+    localDb = db;
+    sourceMode = "local";
+    return;
+  } catch (_) {
+    sourceMode = "live";
+    const root = await fetchLiveNode(1);
+    if (!root) throw new Error("Не удалось загрузить корневой узел Josekipedia.");
+    nodeCache.set("1", root);
   }
 }
 
 function resetBoard() {
-  board.setSize(gameTree.meta.size);
-  board.sgfKomi = gameTree.meta.komi;
-  board.sgfSetup = {
-    black: gameTree.meta.setupBlack.map(p => p.slice()),
-    white: gameTree.meta.setupWhite.map(p => p.slice())
-  };
-
-  for (const [x, y] of gameTree.meta.setupBlack) board.setStone(x, y, 1);
-  for (const [x, y] of gameTree.meta.setupWhite) board.setStone(x, y, 2);
-
+  board.setSize(19);
+  board.sgfKomi = 0;
+  board.sgfSetup = { black: [], white: [] };
   board.history = [];
   board.lastMove = null;
   board.captures = { 1: 0, 2: 0 };
   board.positionHistory = [board.positionKey()];
 }
 
-function restorePosition(node) {
-  gameTree.select(node);
+function playMoveOnBoard(move) {
+  if (!move) return false;
+  if (move.pass) {
+    board.playPass(move.color, false);
+    return true;
+  }
+  const result = board.playStone(move.x, move.y, move.color, false);
+  return Boolean(result?.ok);
+}
+
+async function restoreBrowsePosition() {
   resetBoard();
 
-  for (const treeNode of gameTree.pathTo(node)) {
-    const move = treeNode.move;
-    if (move.pass) {
-      board.playPass(move.color, false);
-    } else {
-      const result = board.playStone(move.x, move.y, move.color, false);
-      if (!result.ok) {
-        throw new Error(`Не удалось восстановить ход №${treeNode.depth}: ${result.reason}`);
-      }
+  for (let i = 0; i < browse.path.length; i += 1) {
+    const item = browse.path[i];
+    if (!playMoveOnBoard(item.move)) {
+      throw new Error(`Не удалось восстановить ход №${i + 1}`);
     }
   }
 
-  refreshChoices();
+  browse.currentId = browse.path.length
+    ? browse.path[browse.path.length - 1].childId
+    : browse.rootId;
+
+  await refreshChoices();
   board.draw();
 }
 
 function currentSequence() {
-  return gameTree.pathTo(gameTree.current).map(node => ({
-    color: Number(node.move.color),
-    pass: Boolean(node.move.pass),
-    x: node.move.pass ? null : Number(node.move.x),
-    y: node.move.pass ? null : Number(node.move.y)
-  }));
+  return browse.path.map(item => ({ ...item.move }));
 }
 
 function updateStudyAvailability() {
   if (!studyButton) return;
-  studyButton.disabled = !active || study.active || currentSequence().length === 0;
+  studyButton.disabled = !active || study.active || browse.path.length === 0;
 }
 
-function refreshChoices() {
+function categoryForType(type) {
+  return TYPE_NAMES[Number(type)] || "";
+}
+
+async function buildChoicesForNode(node) {
+  if (!node) return [];
+
+  const nextColor = expectedNextColor();
+  const rawEdges = [...(node.children || []), ...(node.ghosts || [])];
+  const byPoint = new Map();
+
+  for (const edge of rawEdges) {
+    let move = edge.move ? { ...edge.move } : null;
+
+    if (!move && localDb?.nodes?.[String(edge.id)]) {
+      move = normalizeMove(localDb.nodes[String(edge.id)]?.move);
+    }
+
+    if (!move && nodeCache.has(String(edge.id))) {
+      move = nodeCache.get(String(edge.id))?.move || null;
+    }
+
+    if (!move) continue;
+    if (move.color !== 1 && move.color !== 2) move.color = nextColor;
+    if (move.pass) continue;
+
+    const key = `${move.x},${move.y}`;
+    const existing = byPoint.get(key);
+
+    const normalized = {
+      childId: edge.id,
+      type: edge.type,
+      move: {
+        color: move.color || nextColor,
+        pass: false,
+        x: move.x,
+        y: move.y,
+        point: move.point
+      },
+      x: move.x,
+      y: move.y,
+      label: "",
+      category: categoryForType(edge.type)
+    };
+
+    if (!existing || (existing.type !== 0 && normalized.type === 0)) {
+      byPoint.set(key, normalized);
+    }
+  }
+
+  return [...byPoint.values()];
+}
+
+async function refreshChoices() {
   if (!active || study.active) {
+    browse.choices = [];
     board.setJosekiChoices([]);
     updateStudyAvailability();
     return;
   }
 
-  const labels = Array.isArray(gameTree.current.josekiMeta?.labels)
-    ? gameTree.current.josekiMeta.labels
-    : [];
+  const node = await getNode(browse.currentId);
+  browse.choices = await buildChoicesForNode(node);
 
-  const choices = gameTree.current.children
-    .filter(child => child.move && !child.move.pass)
-    .map((child, index) => {
-      const sourceLabel = labels.find(item =>
-        item.x === child.move.x && item.y === child.move.y
-      );
+  board.setJosekiChoices(
+    browse.choices.map(choice => ({
+      x: choice.x,
+      y: choice.y,
+      label: choice.label,
+      category: choice.category
+    }))
+  );
 
-      return {
-        x: child.move.x,
-        y: child.move.y,
-        label: sourceLabel?.label || String(index + 1),
-        category: ""
-      };
-    });
+  const sourceText = sourceMode === "local"
+    ? `локальная база · ${localDb.nodeCount || Object.keys(localDb.nodes || {}).length} узлов`
+    : "Josekipedia API";
 
-  board.setJosekiChoices(choices);
   status.textContent =
-    `${JOSEKI_LIBRARY_NAME} · текущий ход ${gameTree.current.depth} · вариантов: ${choices.length}.`;
+    `${JOSEKI_LIBRARY_NAME} · ${sourceText} · текущий ход ${browse.path.length} · вариантов: ${browse.choices.length}.`;
+
   updateStudyAvailability();
+}
+
+async function chooseAt(x, y) {
+  const choice = browse.choices.find(item => item.x === x && item.y === y);
+
+  if (!choice) {
+    status.textContent = "Этого хода нет среди вариантов текущей позиции Josekipedia.";
+    return;
+  }
+
+  let move = { ...choice.move };
+
+  if (move.color !== 1 && move.color !== 2) {
+    const target = await getNode(choice.childId);
+    if (target?.move?.color === 1 || target?.move?.color === 2) {
+      move.color = target.move.color;
+    } else {
+      move.color = expectedNextColor();
+    }
+  }
+
+  browse.path.push({
+    parentId: browse.currentId,
+    childId: choice.childId,
+    type: choice.type,
+    move
+  });
+
+  await restoreBrowsePosition();
 }
 
 function detectSequenceCorner(sequence, size = 19) {
@@ -181,10 +356,6 @@ function transformPointToCorner(x, y, fromCorner, toCorner, size = 19) {
   if (fromCorner[1] !== toCorner[1]) tx = size - 1 - tx;
   if (fromCorner[0] !== toCorner[0]) ty = size - 1 - ty;
   return { x: tx, y: ty };
-}
-
-function oppositeColor(color) {
-  return Number(color) === 2 ? 1 : 2;
 }
 
 function roleForColor(color) {
@@ -243,7 +414,7 @@ function transformStudyMove(sourceMove, round) {
         sourceMove.y,
         study.sourceCorner,
         round.corner,
-        gameTree.meta.size
+        19
       )
     );
   }
@@ -258,24 +429,12 @@ function isHumanStudyMove(move, role) {
 
 function clearStudyBoard() {
   board.setJosekiChoices([]);
-  board.setSize(gameTree.meta.size);
-  board.sgfKomi = 0;
-  board.sgfSetup = { black: [], white: [] };
-  board.history = [];
-  board.lastMove = null;
-  board.captures = { 1: 0, 2: 0 };
-  board.positionHistory = [board.positionKey()];
+  resetBoard();
   board.draw();
 }
 
 function applyStudyMove(move) {
-  if (move.pass) {
-    board.playPass(move.color, false);
-    return true;
-  }
-
-  const result = board.playStone(move.x, move.y, move.color, false);
-  return Boolean(result && result.ok);
+  return playMoveOnBoard(move);
 }
 
 function setStudyHintForCurrentMove() {
@@ -312,6 +471,7 @@ function updateStudyStatus(extra = "") {
   const prefix =
     `Повторение ${study.roundIndex + 1} из ${STUDY_ROUND_COUNT} · ` +
     `${roleLabel(round.role)} · ${cornerLabel(round.corner)} угол · ${colorStartLabel(round.startColor)}.`;
+
   studyStatus.textContent = extra ? `${prefix} ${extra}` : prefix;
 }
 
@@ -322,7 +482,6 @@ function finishStudyRoundIfDone() {
 
   if (study.roundIndex >= study.rounds.length) {
     study.completed = true;
-    study.moveIndex = study.sequence.length;
     board.setJosekiChoices([]);
     if (finishStudyButton) finishStudyButton.hidden = false;
     updateStudyStatus("Все шесть повторений пройдены успешно. Нажмите «Завершить обучение».");
@@ -341,8 +500,7 @@ function advanceAutomaticStudyMoves() {
   if (!round) return;
 
   while (study.moveIndex < study.sequence.length) {
-    const sourceMove = study.sequence[study.moveIndex];
-    const move = transformStudyMove(sourceMove, round);
+    const move = transformStudyMove(study.sequence[study.moveIndex], round);
     if (isHumanStudyMove(move, round.role)) break;
 
     if (!applyStudyMove(move)) {
@@ -447,15 +605,18 @@ function startStudy() {
     return;
   }
 
-  const firstMove = sequence.find(Boolean);
+  const firstMove = sequence[0];
   if (!firstMove || (firstMove.color !== 1 && firstMove.color !== 2)) return;
 
   study.active = true;
   study.completed = false;
   study.sequence = sequence.map(move => ({ ...move }));
-  study.sourceCorner = detectSequenceCorner(sequence, gameTree.meta.size);
+  study.sourceCorner = detectSequenceCorner(sequence, 19);
   study.sourceStartColor = firstMove.color;
-  study.savedTreeNode = gameTree.current;
+  study.savedPath = browse.path.map(item => ({
+    ...item,
+    move: { ...item.move }
+  }));
   study.roundIndex = 0;
   study.moveIndex = 0;
   study.firstHumanMoveIndex = -1;
@@ -467,10 +628,14 @@ function startStudy() {
   startStudyRound();
 }
 
-function finishStudy({ restore = true } = {}) {
+async function finishStudy({ restore = true } = {}) {
   if (!study.active) return;
 
-  const savedNode = study.savedTreeNode;
+  const savedPath = study.savedPath.map(item => ({
+    ...item,
+    move: { ...item.move }
+  }));
+
   study.active = false;
   study.completed = false;
   study.sequence = [];
@@ -478,66 +643,75 @@ function finishStudy({ restore = true } = {}) {
   study.roundIndex = 0;
   study.moveIndex = 0;
   study.firstHumanMoveIndex = -1;
-  study.savedTreeNode = null;
+  study.savedPath = [];
 
   board.setJosekiChoices([]);
+
   if (finishStudyButton) finishStudyButton.hidden = true;
   if (studyStatus) {
     studyStatus.hidden = true;
     studyStatus.textContent = "";
   }
 
-  if (restore && savedNode) restorePosition(savedNode);
-  else updateStudyAvailability();
+  if (restore) {
+    browse.path = savedPath;
+    await restoreBrowsePosition();
+  } else {
+    updateStudyAvailability();
+  }
 }
 
 async function activate() {
   activateButton.disabled = true;
-  status.textContent = `Загружаю ${JOSEKI_LIBRARY_NAME}…`;
+  status.textContent = "Загружаю Josekipedia…";
 
   try {
-    const response = await fetch(JOSEKI_SGF_URL, { cache: "no-store" });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    await loadJosekipediaSource();
 
-    const sgf = await response.text();
-    if (!/GN\[Kogo's Joseki Dictionary\]/i.test(sgf)) {
-      throw new Error("Файл не распознан как Kogo's Joseki Dictionary.");
-    }
-
-    const parsed = parseSgfGameWithVariations(sgf);
-    gameTree.importSgf(parsed);
-    decorateTree(parsed.rawTree);
+    browse.rootId = Number(localDb?.rootId || 1);
+    browse.currentId = browse.rootId;
+    browse.path = [];
 
     active = true;
     activateButton.textContent = "Деактивировать";
-    restorePosition(gameTree.root);
+
+    await restoreBrowsePosition();
   } catch (error) {
     active = false;
-    status.textContent = `Ошибка загрузки джосеки: ${error.message}`;
+    status.textContent = `Ошибка загрузки Josekipedia: ${error.message}`;
     updateStudyAvailability();
   } finally {
     activateButton.disabled = false;
   }
 }
 
-function deactivate() {
-  if (study.active) finishStudy({ restore: false });
+async function deactivate() {
+  if (study.active) await finishStudy({ restore: false });
 
   active = false;
-  activateButton.textContent = "Активировать";
+  browse.path = [];
+  browse.currentId = browse.rootId;
+  browse.choices = [];
   board.setJosekiChoices([]);
   board.setSize(19);
-  status.textContent = "Источник: Kogo's Joseki Dictionary.";
+  activateButton.textContent = "Активировать";
+  status.textContent = "Источник: Josekipedia.";
   updateStudyAvailability();
 }
 
-activateButton.addEventListener("click", () => {
-  if (active) deactivate();
-  else activate();
+activateButton.addEventListener("click", async () => {
+  if (active) await deactivate();
+  else await activate();
 });
 
 if (studyButton) studyButton.addEventListener("click", startStudy);
-if (finishStudyButton) finishStudyButton.addEventListener("click", () => finishStudy({ restore: true }));
+if (finishStudyButton) {
+  finishStudyButton.addEventListener("click", () => {
+    finishStudy({ restore: true }).catch(error => {
+      status.textContent = `Ошибка восстановления позиции: ${error.message}`;
+    });
+  });
+}
 
 board.onIntersection = (x, y) => {
   if (study.active) {
@@ -547,32 +721,38 @@ board.onIntersection = (x, y) => {
 
   if (!active) return;
 
-  const child = gameTree.current.children.find(node =>
-    node.move &&
-    !node.move.pass &&
-    node.move.x === x &&
-    node.move.y === y
-  );
-
-  if (!child) {
-    status.textContent = "Этого хода нет среди продолжений текущей позиции.";
-    return;
-  }
-
-  restorePosition(child);
+  chooseAt(x, y).catch(error => {
+    status.textContent = `Ошибка Josekipedia: ${error.message}`;
+  });
 };
 
 board.canvas.addEventListener("wheel", event => {
   if (!active || study.active) return;
+
   event.preventDefault();
 
   if (event.deltaY < 0) {
-    if (gameTree.current.parent) restorePosition(gameTree.current.parent);
+    if (!browse.path.length) return;
+    browse.path.pop();
+    restoreBrowsePosition().catch(error => {
+      status.textContent = `Ошибка восстановления позиции: ${error.message}`;
+    });
     return;
   }
 
-  const next = gameTree.current.preferredChild || gameTree.current.children[0];
-  if (next) restorePosition(next);
+  const next = browse.choices
+    .slice()
+    .sort((a, b) => {
+      const aa = a.type === 0 ? -1 : Number(a.type ?? 99);
+      const bb = b.type === 0 ? -1 : Number(b.type ?? 99);
+      return aa - bb;
+    })[0];
+
+  if (next) {
+    chooseAt(next.x, next.y).catch(error => {
+      status.textContent = `Ошибка Josekipedia: ${error.message}`;
+    });
+  }
 }, { passive: false });
 
 updateStudyAvailability();
