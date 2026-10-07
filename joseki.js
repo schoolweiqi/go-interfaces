@@ -3,7 +3,7 @@
 // No live requests to OGS are made during activation.
 
 const JOSEKI_LIBRARY_NAME = "Kogo's Joseki Dictionary";
-const LOCAL_JOSEKI_SGF_URL = "data/joseki/Kogo%27s%20Joseki%20Dictionary.sgf";
+const LOCAL_JOSEKI_SGF_URL = "data/joseki/Kogo%27s%20Joseki%20Dictionary.sgf?v=20261007-1";
 
 function extractSgfComment(rawNode) {
   if (!rawNode || !rawNode.C || !rawNode.C.length) return "";
@@ -88,11 +88,20 @@ function decorateTreeFromKogoSgf(rawTree, gameTree) {
 }
 
 async function loadLocalJosekiSgf() {
-  const response = await fetch(LOCAL_JOSEKI_SGF_URL, { cache: "no-cache" });
+  const response = await fetch(LOCAL_JOSEKI_SGF_URL, { cache: "no-store" });
   if (!response.ok) {
     throw new Error(`Локальный SGF не загружен: HTTP ${response.status}`);
   }
-  return response.text();
+
+  const sgf = await response.text();
+
+  // Защита от старого закэшированного OGS-файла. Раньше он содержал
+  // координаты вроде "ot", которые не являются точками доски 19×19.
+  if (!/GN\[Kogo's Joseki Dictionary\]/i.test(sgf)) {
+    throw new Error("Загружена не Kogo's Joseki Dictionary. Обновите страницу без кэша.");
+  }
+
+  return sgf;
 }
 
 (function setupJosekiPanel() {
