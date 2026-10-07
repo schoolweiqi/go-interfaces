@@ -254,9 +254,41 @@ window.movePause = (() => {
       updateTurn();
     }
 
+    function refreshJosekiChoices() {
+      if (typeof board.setJosekiChoices !== 'function') return;
+
+      if (!window.josekiModeActive || gameMode !== 'local') {
+        board.setJosekiChoices([]);
+        return;
+      }
+
+      const choices = gameTree.current.children
+        .filter(child => child.move && !child.move.pass)
+        .map((child, index) => {
+          const meta = child.josekiMeta || {};
+          const rawLabel = String(meta.label == null ? '' : meta.label);
+          const label = meta.nodeId
+            ? (rawLabel === '_' ? '' : rawLabel)
+            : String(index + 1);
+
+          return {
+            x: child.move.x,
+            y: child.move.y,
+            label,
+            category: meta.category || '',
+            nodeId: meta.nodeId || null
+          };
+        });
+
+      board.setJosekiChoices(choices);
+    }
+
+    window.refreshJosekiChoices = refreshJosekiChoices;
+
     function updateGameTreeView() {
       renderGameTree(gameTree, gameTreeSvg, gameTreeScroller);
       deleteVariationBranchButton.disabled = gameMode !== 'local' || gameTree.current === gameTree.root;
+      refreshJosekiChoices();
     }
 
     /*
@@ -513,6 +545,10 @@ window.movePause = (() => {
         disconnectOgsGame(false);
       }
       gameMode = 'local';
+      window.josekiModeActive = Boolean(options.josekiMode);
+      if (!window.josekiModeActive && typeof board.setJosekiChoices === 'function') {
+        board.setJosekiChoices([]);
+      }
 
       const parsed = parseSgfGameWithVariations(text);
       gameTree.importSgf(parsed);
