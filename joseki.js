@@ -4,8 +4,8 @@
 
 const OGS_JOSEKI_ROOT_ID = "15081";
 const OGS_JOSEKI_MAX_NODES = 30000;
-const OGS_JOSEKI_CONCURRENCY = 2;
-const OGS_JOSEKI_REQUEST_DELAY_MS = 120;
+const OGS_JOSEKI_CONCURRENCY = 3;
+const OGS_JOSEKI_REQUEST_DELAY_MS = 80;
 
 const ogsJosekiNodeCache = new Map();
 let ogsJosekiTransport = "unknown"; // unknown | direct | proxy
@@ -22,30 +22,22 @@ function escapeSgfValue(value) {
     .replace(/\r?\n/g, "\\n");
 }
 
-function normalizeOjeMoveToken(value) {
-  const token = String(value == null ? "" : value).trim().toLowerCase();
-  if (!token || token === "pass") return "";
-  if (!/^[a-s]{2}$/.test(token)) {
-    throw new Error(`Неизвестная координата OGS Joseki: ${value}`);
+function normalizeOjeNodeId(id) {
+  const value = String(id == null ? "" : id).trim();
+  if (!/^(?:root|\d+)$/.test(value)) {
+    throw new Error(`Некорректный OGS Joseki node id: ${id}`);
   }
-  return token;
+  return value;
 }
 
-function parseOjePlay(play) {
-  const parts = String(play || "")
-    .split(".")
-    .map(part => part.trim())
-    .filter(Boolean);
+function ogsCoordinateToSgf(value, size = 19) {
+  const raw = String(value == null ? "" : value).trim();
+  if (!raw || raw.toLowerCase() === "pass") return "";
 
-  const rootIndex = parts.indexOf("root");
-  const moves = rootIndex >= 0 ? parts.slice(rootIndex + 1) : parts;
-  return moves.map(normalizeOjeMoveToken);
-}
+  // Some historic OJE exports already used SGF-like two-letter coordinates.
+  if (/^[a-s]{2}$/i.test(raw)) return raw.toLowerCase();
 
-function prettyOgsCoordinateToSgf(value, size = 19) {
-  const text = String(value || "").trim().toUpperCase();
-  if (!text || text === "PASS") return "";
-
+  const text = raw.toUpperCase();
   const match = text.match(/^([A-HJ-T])(\d{1,2})$/);
   if (!match) throw new Error(`Не удалось преобразовать координату OGS: ${value}`);
 
@@ -61,20 +53,59 @@ function prettyOgsCoordinateToSgf(value, size = 19) {
   return String.fromCharCode(97 + x) + String.fromCharCode(97 + y);
 }
 
+function parseOjePlay(play) {
+  const parts = String(play || "")
+    .split(/[.,]/)
+    .map(part => part.trim())
+    .filter(Boolean)
+    .filter(part => part.toLowerCase() !== "root");
+
+  return parts.map(part => ogsCoordinateToSgf(part, 19));
+}
+
 function getOjeChildren(dto) {
   return Array.isArray(dto && dto.next_moves)
     ? dto.next_moves.filter(move => move && move.node_id !== undefined && move.node_id !== null)
     : [];
 }
 
-function normalizeOjeNodeId(id) {
-  const value = String(id == null ? "" : id).trim();
-  if (!/^(?:root|\d+)$/.test(value)) throw new Error(`Некорректный OGS Joseki node id: ${id}`);
-  return value;
+/*
+ * OGS /oje/positions is the endpoint used by the OGS client for prefetching.
+ * It returns a list containing the requested position and its immediate
+ * continuations. Convert that list to the single-node shape used by the rest
+ * of this importer and synthesize next_moves from the remaining records.
+ */
+function normalizeOjeBundle(id, payload) {
+  if (!Array.isArray(payload)) {
+    if (!payload || typeof payload !== "object") {
+      throw new Error(`OGS вернул пустой ответ для Joseki ${id}.`);
+    }
+    return payload;
+  }
+
+  const requested = payload.find(item =>
+    item && String(item.node_id == null ? "" : item.node_id) === id
+  ) || payload[0];
+
+  if (!requested || typeof requested !== "object") {
+    throw new Error(`OGS не вернул позицию Joseki ${id}.`);
+  }
+
+  const requestedId = String(requested.node_id == null ? id : requested.node_id);
+  const children = payload.filter(item =>
+    item &&
+    item.node_id !== undefined &&
+    String(item.node_id) !== requestedId
+  );
+
+  return {
+    ...requested,
+    next_moves: children
+  };
 }
 
 async function fetchOjeNodeDirect(id) {
-  const url = new URL("https://online-go.com/oje/position");
+  const url = new URL("https://online-go.com/oje/positions");
   url.searchParams.set("id", id);
   url.searchParams.set("mode", "0");
 
@@ -85,7 +116,7 @@ async function fetchOjeNodeDirect(id) {
   });
 
   if (!response.ok) throw new Error(`OGS OJE: HTTP ${response.status}`);
-  return response.json();
+  return normalizeOjeBundle(id, await response.json());
 }
 
 async function fetchOjeNodeProxy(id) {
@@ -109,29 +140,26 @@ async function fetchOjeNodeProxy(id) {
   if (!response.ok) {
     throw new Error(data && data.error ? data.error : `Прокси OGS Joseki: HTTP ${response.status}`);
   }
-  return data;
+
+  return normalizeOjeBundle(id, data);
 }
 
 async function fetchOjeNode(rawId) {
   const id = normalizeOjeNodeId(rawId);
   if (ogsJosekiNodeCache.has(id)) return ogsJosekiNodeCache.get(id);
 
-  let dto;
+  let dto = null;
 
   if (ogsJosekiTransport !== "proxy") {
     try {
       dto = await fetchOjeNodeDirect(id);
       ogsJosekiTransport = "direct";
-    } catch (directError) {
+    } catch (_) {
       ogsJosekiTransport = "proxy";
     }
   }
 
   if (!dto) dto = await fetchOjeNodeProxy(id);
-
-  if (!dto || typeof dto !== "object") {
-    throw new Error(`OGS вернул пустой узел Joseki ${id}.`);
-  }
 
   const returnedId = String(dto.node_id == null ? "" : dto.node_id);
   if (id !== "root" && returnedId && returnedId !== id) {
@@ -150,18 +178,22 @@ async function collectOjeSubtree(rootId, onProgress) {
   const queue = [normalizedRoot];
   let cursor = 0;
 
-  async function worker() {
-    while (true) {
-      const index = cursor++;
-      if (index >= queue.length) return;
+  while (cursor < queue.length) {
+    const batch = queue.slice(cursor, cursor + OGS_JOSEKI_CONCURRENCY);
+    cursor += batch.length;
 
-      const id = queue[index];
+    const results = await Promise.all(batch.map(async id => {
       const dto = await fetchOjeNode(id);
+      return { id, dto };
+    }));
+
+    for (const { id, dto } of results) {
       nodes.set(id, dto);
 
       for (const child of getOjeChildren(dto)) {
         const childId = normalizeOjeNodeId(child.node_id);
         if (queued.has(childId)) continue;
+
         queued.add(childId);
         queue.push(childId);
 
@@ -169,41 +201,13 @@ async function collectOjeSubtree(rootId, onProgress) {
           throw new Error(`Дерево OGS Joseki больше лимита ${OGS_JOSEKI_MAX_NODES} узлов.`);
         }
       }
-
-      if (typeof onProgress === "function") {
-        onProgress({ loaded: nodes.size, queued: queue.length, transport: ogsJosekiTransport });
-      }
-
-      await josekiSleep(OGS_JOSEKI_REQUEST_DELAY_MS);
-    }
-  }
-
-  const workers = Array.from(
-    { length: Math.min(OGS_JOSEKI_CONCURRENCY, queue.length || 1) },
-    () => worker()
-  );
-  await Promise.all(workers);
-
-  // A worker that was fetching the first item can append work after the other
-  // workers have already exited. Finish any tail that remains.
-  while (cursor < queue.length) {
-    const id = queue[cursor++];
-    if (nodes.has(id)) continue;
-    const dto = await fetchOjeNode(id);
-    nodes.set(id, dto);
-
-    for (const child of getOjeChildren(dto)) {
-      const childId = normalizeOjeNodeId(child.node_id);
-      if (!queued.has(childId)) {
-        queued.add(childId);
-        queue.push(childId);
-      }
     }
 
     if (typeof onProgress === "function") {
       onProgress({ loaded: nodes.size, queued: queue.length, transport: ogsJosekiTransport });
     }
-    await josekiSleep(OGS_JOSEKI_REQUEST_DELAY_MS);
+
+    if (cursor < queue.length) await josekiSleep(OGS_JOSEKI_REQUEST_DELAY_MS);
   }
 
   return nodes;
@@ -220,7 +224,7 @@ function ojeMoveTokenBetween(parentDto, childDto, relation) {
     return childMoves[childMoves.length - 1];
   }
 
-  return prettyOgsCoordinateToSgf(relation && relation.placement, 19);
+  return ogsCoordinateToSgf(relation && relation.placement, 19);
 }
 
 function ojeMoveColorFromDto(childDto, parentDto) {
@@ -246,15 +250,19 @@ function buildOjeSgf(rootId, nodes) {
   if (!rootDto) throw new Error(`Корневой OGS Joseki node ${rootKey} не загружен.`);
 
   const baseMoves = parseOjePlay(rootDto.play);
+  const ancestry = new Set();
 
   function serializeDescendants(parentId) {
-    const parentDto = nodes.get(String(parentId));
+    const key = String(parentId);
+    if (ancestry.has(key)) return "";
+
+    const parentDto = nodes.get(key);
     if (!parentDto) return "";
 
+    ancestry.add(key);
     const relations = getOjeChildren(parentDto).filter(relation =>
       nodes.has(String(relation.node_id))
     );
-    if (!relations.length) return "";
 
     const serializeChild = relation => {
       const childId = String(relation.node_id);
@@ -267,8 +275,12 @@ function buildOjeSgf(rootId, nodes) {
       return text + serializeDescendants(childId);
     };
 
-    if (relations.length === 1) return serializeChild(relations[0]);
-    return relations.map(relation => `(${serializeChild(relation)})`).join("");
+    let output = "";
+    if (relations.length === 1) output = serializeChild(relations[0]);
+    else if (relations.length > 1) output = relations.map(relation => `(${serializeChild(relation)})`).join("");
+
+    ancestry.delete(key);
+    return output;
   }
 
   let sgf =
@@ -297,8 +309,78 @@ function buildOjeSgf(rootId, nodes) {
     sgf,
     focusDepth: baseMoves.length,
     nodeCount: nodes.size,
-    rootId: rootKey
+    rootId: rootKey,
+    nodes
   };
+}
+
+function treeNodeAtPreferredDepth(gameTree, depth) {
+  let node = gameTree.root;
+  const target = Math.max(0, Number(depth) || 0);
+
+  while (node.depth < target && node.children.length) {
+    node = node.preferredChild && node.children.includes(node.preferredChild)
+      ? node.preferredChild
+      : node.children[0];
+  }
+
+  return node.depth === target ? node : null;
+}
+
+function sgfTokenToMove(token, color) {
+  if (!token) return { color, pass: true, x: null, y: null };
+  const x = token.charCodeAt(0) - 97;
+  const y = token.charCodeAt(1) - 97;
+  return { color, pass: false, x, y };
+}
+
+function sameTreeMove(move, expected) {
+  if (!move) return false;
+  if (Number(move.color) !== Number(expected.color)) return false;
+  if (Boolean(move.pass) !== Boolean(expected.pass)) return false;
+  return move.pass || (Number(move.x) === Number(expected.x) && Number(move.y) === Number(expected.y));
+}
+
+function annotateGameTreeWithOje(imported) {
+  const gameTree = window.goGameTree;
+  if (!gameTree || !imported || !imported.nodes) return;
+
+  const focusNode = treeNodeAtPreferredDepth(gameTree, imported.focusDepth);
+  if (!focusNode) return;
+
+  const visited = new Set();
+
+  function attach(ogsId, treeNode, relationFromParent = null) {
+    const id = String(ogsId);
+    if (visited.has(id)) return;
+    visited.add(id);
+
+    const dto = imported.nodes.get(id);
+    if (!dto) return;
+
+    treeNode.josekiMeta = {
+      nodeId: id,
+      placement: relationFromParent ? String(relationFromParent.placement || "") : "",
+      category: relationFromParent ? String(relationFromParent.category || "") : String(dto.category || ""),
+      label: relationFromParent ? String(relationFromParent.variation_label || "") : String(dto.variation_label || "")
+    };
+
+    for (const relation of getOjeChildren(dto)) {
+      const childId = String(relation.node_id);
+      const childDto = imported.nodes.get(childId);
+      if (!childDto) continue;
+
+      const color = ojeMoveColorFromDto(childDto, dto);
+      const token = ojeMoveTokenBetween(dto, childDto, relation);
+      const expected = sgfTokenToMove(token, color);
+      const childTreeNode = treeNode.children.find(child => sameTreeMove(child.move, expected));
+      if (!childTreeNode) continue;
+
+      attach(childId, childTreeNode, relation);
+    }
+  }
+
+  attach(imported.rootId, focusNode, null);
 }
 
 async function importOgsJoseki(rootId = OGS_JOSEKI_ROOT_ID, onProgress) {
@@ -319,6 +401,7 @@ async function importOgsJoseki(rootId = OGS_JOSEKI_ROOT_ID, onProgress) {
   cachedJosekiImport = buildOjeSgf(normalizedRoot, nodes);
   window.currentJosekiSgf = cachedJosekiImport.sgf;
   window.currentJosekiRootId = normalizedRoot;
+  window.currentJosekiNodes = nodes;
   return cachedJosekiImport;
 }
 
@@ -341,6 +424,7 @@ async function importOgsJoseki(rootId = OGS_JOSEKI_ROOT_ID, onProgress) {
             : progress.transport === "proxy"
               ? "OGS через Cloudflare"
               : "память";
+
         status.textContent =
           `Загрузка: ${progress.loaded} из найденных ${progress.queued} позиций · ${transport}.`;
       });
@@ -351,12 +435,21 @@ async function importOgsJoseki(rootId = OGS_JOSEKI_ROOT_ID, onProgress) {
 
       const result = window.loadSgfTextIntoGame(imported.sgf, {
         sourceName: `OGS Joseki ${imported.rootId}`,
-        focusDepth: imported.focusDepth
+        focusDepth: imported.focusDepth,
+        josekiMode: true
       });
+
+      annotateGameTreeWithOje(imported);
+      window.josekiModeActive = true;
+      if (typeof window.refreshJosekiChoices === "function") window.refreshJosekiChoices();
+
+      const focusNode = treeNodeAtPreferredDepth(window.goGameTree, imported.focusDepth);
+      const variants = focusNode ? focusNode.children.length : 0;
 
       status.textContent =
         `Джосеки активировано. OGS #${imported.rootId}: ${imported.nodeCount} позиций, ` +
-        `SGF загружен в память, в дереве ${result.nodeCount} узлов.`;
+        `SGF загружен в память, в дереве ${result.nodeCount} узлов. ` +
+        `В текущей позиции вариантов: ${variants}.`;
     } catch (error) {
       console.error("OGS Joseki import failed:", error);
       status.textContent = `Ошибка загрузки джосеки: ${error.message}`;
