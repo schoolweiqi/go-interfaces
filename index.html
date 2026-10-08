@@ -296,9 +296,29 @@
       </aside>
 
       <section class="boardWrap">
-        <div class="boardColumn">
-          <canvas id="board" aria-label="Доска Го"></canvas>
+        <div class="boardWorkspace">
+          <div class="boardColumn">
+            <canvas id="board" aria-label="Доска Го"></canvas>
+          </div>
 
+          <aside class="gameInfoPanel" aria-label="Информация о партии">
+            <h2>Партия</h2>
+            <div class="gameInfoElapsedLabel">Время партии</div>
+            <div id="gameInfoElapsed" class="gameInfoElapsed" role="timer" aria-live="off">00:00</div>
+            <div class="gameInfoPlayers">
+              <div id="gameInfoBlack" class="gameInfoPlayer is-active">
+                <span class="gameInfoStone black" aria-hidden="true">●</span>
+                <span id="gameInfoBlackName" class="gameInfoPlayerName">Чёрные</span>
+                <span id="gameInfoBlackClock" class="gameInfoPlayerClock" hidden></span>
+              </div>
+              <div id="gameInfoWhite" class="gameInfoPlayer">
+                <span class="gameInfoStone white" aria-hidden="true">●</span>
+                <span id="gameInfoWhiteName" class="gameInfoPlayerName">Белые</span>
+                <span id="gameInfoWhiteClock" class="gameInfoPlayerClock" hidden></span>
+              </div>
+            </div>
+            <div id="gameInfoStatus" class="gameInfoStatus">Локальная партия</div>
+          </aside>
         </div>
       </section>
     </main>

@@ -170,6 +170,14 @@ window.stoneSound = (() => {
     const influenceNumbersInput = document.getElementById('influenceNumbers');
     const movePauseSecondsInput = document.getElementById('movePauseSeconds');
     const stoneSoundVolumeInput = document.getElementById('stoneSoundVolume');
+    const gameInfoElapsed = document.getElementById('gameInfoElapsed');
+    const gameInfoBlack = document.getElementById('gameInfoBlack');
+    const gameInfoWhite = document.getElementById('gameInfoWhite');
+    const gameInfoBlackName = document.getElementById('gameInfoBlackName');
+    const gameInfoWhiteName = document.getElementById('gameInfoWhiteName');
+    const gameInfoBlackClock = document.getElementById('gameInfoBlackClock');
+    const gameInfoWhiteClock = document.getElementById('gameInfoWhiteClock');
+    const gameInfoStatus = document.getElementById('gameInfoStatus');
 
     boardCleanBtn.addEventListener('click', () => {
       board.setCleanVisible(!board.showClean);
@@ -327,6 +335,126 @@ window.stoneSound = (() => {
       moveNumber.textContent = String(currentMoveNumber());
     }
 
+    let gameInfoSessionKey = null;
+    let gameInfoStartedAt = null;
+    let gameInfoStoppedAt = null;
+
+    function gameInfoCurrentSessionKey() {
+      if (gameMode === 'bot' && botGame.active) return `bot:${botGame.seed}`;
+      if (gameMode === 'ogs' && ogsGame.active) return `ogs:${ogsGame.gameId || 'active'}`;
+      if (gameMode === 'network' && networkGame.active) return `network:${networkGame.roomId || 'active'}`;
+      return 'local';
+    }
+
+    function formatGameElapsed(milliseconds) {
+      const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
+      const hours = Math.floor(totalSeconds / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+      const seconds = totalSeconds % 60;
+      if (hours > 0) {
+        return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+      }
+      return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    }
+
+    function renderGameInfo() {
+      const sessionKey = gameInfoCurrentSessionKey();
+      if (sessionKey !== gameInfoSessionKey) {
+        gameInfoSessionKey = sessionKey;
+        gameInfoStartedAt = null;
+        gameInfoStoppedAt = null;
+      }
+
+      const liveGameActive =
+        (gameMode === 'bot' && botGame.active) ||
+        (gameMode === 'ogs' && ogsGame.active) ||
+        (gameMode === 'network' && networkGame.active);
+      const localGameHasMoves = gameMode === 'local' && currentMoveNumber() > 0;
+      const liveGameFinished =
+        (gameMode === 'bot' && botGame.ended) ||
+        (gameMode === 'ogs' && ogsGame.phase === 'finished') ||
+        (gameMode === 'network' && networkGame.lastState?.status === 'ended');
+
+      if (!gameInfoStartedAt && (liveGameActive || localGameHasMoves)) {
+        gameInfoStartedAt = Date.now();
+      }
+      if (gameInfoStartedAt && liveGameFinished && !gameInfoStoppedAt) {
+        gameInfoStoppedAt = Date.now();
+      }
+      const elapsedEnd = gameInfoStoppedAt || Date.now();
+      gameInfoElapsed.textContent = formatGameElapsed(
+        gameInfoStartedAt ? elapsedEnd - gameInfoStartedAt : 0
+      );
+
+      let blackName = 'Чёрные';
+      let whiteName = 'Белые';
+      let blackClockText = '';
+      let whiteClockText = '';
+      let clocksVisible = false;
+      let status = turn === 1 ? 'Ход чёрных' : 'Ход белых';
+
+      if (gameMode === 'bot' && botGame.active) {
+        blackName = botGame.humanColor === 1 ? 'Вы' : 'GNU Go';
+        whiteName = botGame.humanColor === 2 ? 'Вы' : 'GNU Go';
+        status = botGame.ended
+          ? 'Партия завершена'
+          : botGame.thinking
+            ? 'GNU Go думает…'
+            : turn === botGame.humanColor ? 'Ваш ход' : 'Ход GNU Go';
+      } else if (gameMode === 'ogs' && ogsGame.active) {
+        blackName = ogsPlayerName(ogsGame.players.black, 'Чёрные');
+        whiteName = ogsPlayerName(ogsGame.players.white, 'Белые');
+        status = ogsGame.phase === 'stone removal'
+          ? 'Подсчёт результата'
+          : ogsGame.phase === 'finished'
+            ? 'Партия завершена'
+            : turn === ogsGame.color ? 'Ваш ход' : 'Ход соперника';
+
+        if (
+          ogsGame.clock &&
+          typeof currentOgsDisplayClock === 'function' &&
+          typeof formatClockPart === 'function'
+        ) {
+          const display = currentOgsDisplayClock();
+          if (display) {
+            blackClockText = formatClockPart(display.black);
+            whiteClockText = formatClockPart(display.white);
+            clocksVisible = true;
+          }
+        }
+      } else if (gameMode === 'network' && networkGame.active) {
+        blackName = networkGame.color === 1 ? 'Вы' : networkGame.color === 2 ? 'Соперник' : 'Чёрные';
+        whiteName = networkGame.color === 2 ? 'Вы' : networkGame.color === 1 ? 'Соперник' : 'Белые';
+        const state = networkGame.lastState;
+        status = state?.status === 'ended'
+          ? 'Партия завершена'
+          : !state
+            ? 'Подключение…'
+            : turn === networkGame.color ? 'Ваш ход' : 'Ход соперника';
+      }
+
+      gameInfoBlackName.textContent = blackName;
+      gameInfoWhiteName.textContent = whiteName;
+      gameInfoBlackClock.textContent = blackClockText;
+      gameInfoWhiteClock.textContent = whiteClockText;
+      gameInfoBlackClock.hidden = !clocksVisible;
+      gameInfoWhiteClock.hidden = !clocksVisible;
+      gameInfoBlack.classList.toggle('is-active', turn === 1);
+      gameInfoWhite.classList.toggle('is-active', turn === 2);
+      gameInfoStatus.textContent = status;
+    }
+
+    function resetGameInfoTimer() {
+      gameInfoStartedAt = null;
+      gameInfoStoppedAt = null;
+      gameInfoSessionKey = gameInfoCurrentSessionKey();
+      renderGameInfo();
+    }
+
+    window.updateGameInfo = renderGameInfo;
+    window.resetGameInfoTimer = resetGameInfoTimer;
+    setInterval(renderGameInfo, 1000);
+
     function currentFogViewerColor() {
       if (gameMode === 'bot' && botGame.active) return botGame.humanColor;
       if (gameMode === 'ogs' && ogsGame.active && (ogsGame.color === 1 || ogsGame.color === 2)) return ogsGame.color;
@@ -346,12 +474,14 @@ window.stoneSound = (() => {
       board.setFogViewerColor(currentFogViewerColor());
 
       updateMoveNumber();
+      renderGameInfo();
     }
 
     function updateCaptures() {
       blackCaptures.textContent = board.captures[1] || 0;
       whiteCaptures.textContent = board.captures[2] || 0;
       updateMoveNumber();
+      renderGameInfo();
     }
 
     function pauseBlocksMove(messageTarget = gameMsg) {
@@ -572,6 +702,7 @@ window.stoneSound = (() => {
       board.setSize(Number(sizeSelect.value));
       turn = 1;
       resetGameTreeFromBoard(turn);
+      resetGameInfoTimer();
       updateTurn();
       updateCaptures();
       gameMsg.textContent = `Доска изменена на ${sizeSelect.value} × ${sizeSelect.value}.`;
@@ -583,6 +714,7 @@ window.stoneSound = (() => {
       board.setSize(Number(sizeSelect.value));
       turn = 1;
       resetGameTreeFromBoard(turn);
+      resetGameInfoTimer();
       updateTurn();
       updateCaptures();
       gameMsg.textContent = `Локальная тестовая партия: ${sizeSelect.value} × ${sizeSelect.value}. Снятие групп, запрет самоубийства и простое ко включены.`;
@@ -688,6 +820,7 @@ window.stoneSound = (() => {
       }
 
       restoreTreePosition(target);
+      resetGameInfoTimer();
 
       const sourceName = options.sourceName || 'SGF';
       gameMsg.textContent =
