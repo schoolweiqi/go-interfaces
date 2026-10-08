@@ -142,6 +142,38 @@ window.stoneSound = (() => {
     }
   }
 
+  // A light clock tick that uses the same volume setting as stone placement.
+  function playTick() {
+    if (volume <= 0) return;
+
+    const ctx = getContext();
+    if (!ctx) return;
+
+    const start = () => {
+      const now = ctx.currentTime;
+      const master = Math.pow(volume / 10, 1.35);
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(1450, now);
+      osc.frequency.exponentialRampToValueAtTime(920, now + 0.012);
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(0.16 * master, now + 0.001);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.025);
+
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.027);
+    };
+
+    if (ctx.state === 'suspended') {
+      ctx.resume().then(start).catch(() => {});
+    } else {
+      start();
+    }
+  }
+
   // Resume audio as soon as the browser receives a genuine user gesture.
   document.addEventListener('pointerdown', () => {
     const ctx = getContext();
@@ -151,7 +183,8 @@ window.stoneSound = (() => {
   return {
     get volume() { return volume; },
     setVolume,
-    play
+    play,
+    playTick
   };
 })();
 
@@ -357,6 +390,50 @@ window.stoneSound = (() => {
       return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
     }
 
+    let lastClockTickToken = null;
+
+    function tickIfOgsClockIsLow(display, sessionKey) {
+      if (
+        !display ||
+        ![1, 2].includes(display.activeColor) ||
+        ogsGame.clock?.pause?.paused
+      ) {
+        lastClockTickToken = null;
+        return;
+      }
+
+      const activeClock = display.activeColor === 1 ? display.black : display.white;
+      if (!activeClock || typeof activeClock !== 'object') {
+        lastClockTickToken = null;
+        return;
+      }
+
+      let remainingMs = Number(activeClock.main_time);
+      if (!(remainingMs > 0)) {
+        if (Number.isFinite(Number(activeClock.period_time_left))) {
+          remainingMs = Number(activeClock.period_time_left);
+        } else if (Number.isFinite(Number(activeClock.block_time_left))) {
+          remainingMs = Number(activeClock.block_time_left);
+        } else {
+          remainingMs = 0;
+        }
+      }
+
+      const remainingSeconds = remainingMs > 0
+        ? Math.ceil((remainingMs - 1) / 1000)
+        : 0;
+
+      if (remainingSeconds < 1 || remainingSeconds > 10) {
+        lastClockTickToken = null;
+        return;
+      }
+
+      const token = `${sessionKey}:${display.activeColor}:${remainingSeconds}`;
+      if (token === lastClockTickToken) return;
+      lastClockTickToken = token;
+      window.stoneSound.playTick();
+    }
+
     function renderGameInfo() {
       const sessionKey = gameInfoCurrentSessionKey();
       if (sessionKey !== gameInfoSessionKey) {
@@ -386,6 +463,16 @@ window.stoneSound = (() => {
         gameInfoStartedAt ? elapsedEnd - gameInfoStartedAt : 0
       );
 
+      const ogsDisplayClock =
+        gameMode === 'ogs' &&
+        ogsGame.active &&
+        ogsGame.phase === 'play' &&
+        ogsGame.clock &&
+        typeof currentOgsDisplayClock === 'function'
+          ? currentOgsDisplayClock()
+          : null;
+      tickIfOgsClockIsLow(ogsDisplayClock, sessionKey);
+
       let blackName = 'Чёрные';
       let whiteName = 'Белые';
       let blackClockText = '';
@@ -410,17 +497,10 @@ window.stoneSound = (() => {
             ? 'Партия завершена'
             : turn === ogsGame.color ? 'Ваш ход' : 'Ход соперника';
 
-        if (
-          ogsGame.clock &&
-          typeof currentOgsDisplayClock === 'function' &&
-          typeof formatClockPart === 'function'
-        ) {
-          const display = currentOgsDisplayClock();
-          if (display) {
-            blackClockText = formatClockPart(display.black);
-            whiteClockText = formatClockPart(display.white);
-            clocksVisible = true;
-          }
+        if (ogsDisplayClock && typeof formatClockPart === 'function') {
+          blackClockText = formatClockPart(ogsDisplayClock.black);
+          whiteClockText = formatClockPart(ogsDisplayClock.white);
+          clocksVisible = true;
         }
       } else if (gameMode === 'network' && networkGame.active) {
         blackName = networkGame.color === 1 ? 'Вы' : networkGame.color === 2 ? 'Соперник' : 'Чёрные';

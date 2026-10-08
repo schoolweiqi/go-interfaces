@@ -347,16 +347,6 @@ body:not(.josekiPage) .boardWrap {
   background: #202327;
   color: #eeeeee;
 }
-.gameInfoPanel h2 {
-  margin: 0 0 16px;
-  font-size: 15px;
-  line-height: 1.3;
-}
-.gameInfoElapsedLabel {
-  margin-bottom: 4px;
-  color: #aeb4ba;
-  font-size: 11px;
-}
 .gameInfoElapsed {
   margin-bottom: 16px;
   font-size: 27px;
