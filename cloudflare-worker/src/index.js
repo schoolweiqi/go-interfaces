@@ -503,13 +503,6 @@ export class GameRoom extends DurableObject {
       }
       state.items.push(item);
       if (state.items.length > 5000) state.items = state.items.slice(-5000);
-    } else if (data.type === "review-remove") {
-      const id = String(data.id || "").slice(0, 100);
-      if (!id) return this.sendError(ws, "Не указана метка для удаления");
-      state.items = Array.isArray(state.items) ? state.items : [];
-      const previousLength = state.items.length;
-      state.items = state.items.filter(item => String(item?.id || "") !== id);
-      if (state.items.length === previousLength) return this.sendError(ws, "Метка уже удалена");
     } else if (data.type === "review-undo") {
       state.items = Array.isArray(state.items) ? state.items : [];
       state.items.pop();

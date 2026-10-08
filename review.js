@@ -200,6 +200,57 @@
     board.draw();
   }
 
+  function pointToSegmentDistance(point, a, b) {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const lengthSquared = dx * dx + dy * dy;
+    if (lengthSquared === 0) return Math.hypot(point.x - a.x, point.y - a.y);
+
+    const t = Math.max(0, Math.min(1,
+      ((point.x - a.x) * dx + (point.y - a.y) * dy) / lengthSquared
+    ));
+    return Math.hypot(
+      point.x - (a.x + t * dx),
+      point.y - (a.y + t * dy)
+    );
+  }
+
+  function findItemAt(point) {
+    // The most recently drawn annotation is visually on top.
+    for (let i = state.items.length - 1; i >= 0; i--) {
+      const item = state.items[i];
+      if (item?.kind === 'mark') {
+        if (Math.hypot(point.x - Number(item.x), point.y - Number(item.y)) <= 0.42) {
+          return item;
+        }
+      } else if (item?.kind === 'line' && Array.isArray(item.points)) {
+        for (let j = 1; j < item.points.length; j++) {
+          if (pointToSegmentDistance(point, item.points[j - 1], item.points[j]) <= 0.22) {
+            return item;
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  function eraseAt(point) {
+    const item = findItemAt(point);
+    if (!item) return false;
+
+    if (state.connected) {
+      if (!send({ type: 'review-remove', id: item.id })) {
+        setStatus('Связь с сервером потеряна: метка не удалена.');
+        return false;
+      }
+      return true;
+    }
+
+    state.items = state.items.filter(existing => existing.id !== item.id);
+    board.draw();
+    return true;
+  }
+
   function pointerDown(event) {
     if (!state.tool || event.button !== 0) return;
     event.preventDefault();
