@@ -45,6 +45,7 @@
     .reviewColorRow input[type=color]{width:42px;min-height:32px;height:32px;margin:0;padding:2px}
     .reviewActions,.reviewLinkBox{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:9px}
     .reviewActions button,.reviewLinkBox input,.reviewLinkBox button{margin:0}
+    .reviewActions button.active{background:#b98645;border-color:#c49356;color:#15100a}
     .reviewStatus{margin-top:8px;padding:9px 10px;border:1px solid #34383d;border-radius:8px;background:#17191b;color:#c9ced3;font-size:11px;line-height:1.4}
     .reviewIdentity{display:flex;align-items:center;gap:7px;margin-top:8px;color:#aeb4ba;font-size:11px}
     .reviewDot{width:12px;height:12px;border-radius:50%;border:1px solid #111;box-shadow:0 0 0 1px #ffffff22}
@@ -71,7 +72,7 @@
       <div class="reviewColorRow"><label>Цвет квадрата</label><input id="reviewSquareColor" type="color" value="#ffcc33"></div>
       <div class="reviewColorRow"><label>Цвет линии</label><input id="reviewLineColor" type="color" value="#e53935"></div>
       <div class="reviewActions">
-        <button id="reviewUndo" class="secondary" type="button">Стереть</button>
+        <button id="reviewUndo" class="secondary" type="button" data-review-tool="eraser" aria-pressed="false">Стереть</button>
         <button id="reviewClear" class="secondary" type="button">Очистить</button>
       </div>
       <button id="reviewCreate" type="button">Создать разбор</button>
@@ -121,7 +122,11 @@
     state.dragging = false;
     state.lastPoint = null;
     state.previewLine = null;
-    toolButtons.forEach(b => b.classList.toggle('active', b.dataset.reviewTool === state.tool));
+    toolButtons.forEach(b => {
+      const active = b.dataset.reviewTool === state.tool;
+      b.classList.toggle('active', active);
+      b.setAttribute('aria-pressed', String(active));
+    });
     board.draw();
   }
   toolButtons.forEach(b => b.addEventListener('click', () => setTool(b.dataset.reviewTool)));
@@ -199,6 +204,15 @@
     if (!state.tool || event.button !== 0) return;
     event.preventDefault();
     event.stopImmediatePropagation();
+
+    if (state.tool === 'eraser') {
+      const p = intersection(event, false);
+      if (p) eraseAt(p);
+      state.dragging = false;
+      state.lastPoint = null;
+      return;
+    }
+
     state.dragging = true;
     state.lastPoint = null;
     if (state.tool === 'line') {
@@ -582,7 +596,6 @@
     board.draw();
   }
 
-  undoButton.addEventListener('click',undoLast);
   clearButton.addEventListener('click',clearAll);
   createButton.addEventListener('click',createRoom);
   leaveButton.addEventListener('click',leaveRoom);
@@ -605,6 +618,6 @@
   const initialRoom=new URL(location.href).searchParams.get('review');
   if(initialRoom) joinRoom(initialRoom);
 
-  window.goReview={state,setTool,createRoom,joinRoom,leaveRoom,undoLast,clearAll};
+  window.goReview={state,setTool,createRoom,joinRoom,leaveRoom,undoLast,clearAll,eraseAt};
   board.draw();
 })();
