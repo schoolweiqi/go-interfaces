@@ -5,6 +5,11 @@ GoBoard.prototype.setCleanVisible = function(visible) {
         this.draw();
       };
 
+GoBoard.prototype.setStonesHidden = function(hidden) {
+        this.hideStones = Boolean(hidden);
+        this.draw();
+      };
+
 GoBoard.prototype.setPhantomVisible = function(visible) {
         this.showPhantom = Boolean(visible);
         if (!this.showPhantom) this.phantomHover = null;
@@ -151,7 +156,7 @@ GoBoard.prototype.draw = function() {
         let realStones = null;
         let realPositionHistory = null;
 
-        if (this.showPhantom && this.phantomHover) {
+        if (!this.hideStones && this.showPhantom && this.phantomHover) {
           phantomPreview = this.simulateStone(
             this.phantomHover.x,
             this.phantomHover.y,
@@ -178,11 +183,11 @@ GoBoard.prototype.draw = function() {
         c.fillStyle = wood;
         c.fillRect(0, 0, cssSize, cssSize);
 
-        this.drawInfluenceHeatmap(pad, step);
+        if (!this.hideStones) this.drawInfluenceHeatmap(pad, step);
 
         const showGrid = !this.showClean;
-        const showFaces = this.showFaces;
-        const showLinks = this.showLinks;
+        const showFaces = !this.hideStones && this.showFaces;
+        const showLinks = !this.hideStones && this.showLinks;
 
         if (showGrid) {
           c.strokeStyle = '#2d2116';
@@ -209,7 +214,7 @@ GoBoard.prototype.draw = function() {
           const links = this.buildThinLinks(groups);
           this.drawThinLinks(links, pad, step, cssSize);
           this.drawMetaballGroups(groups, pad, step, cssSize);
-        } else {
+        } else if (!this.hideStones) {
           for (let y = 0; y < this.size; y++) {
             for (let x = 0; x < this.size; x++) {
               const stone = this.getStone(x, y);
@@ -239,12 +244,14 @@ GoBoard.prototype.draw = function() {
           this.drawGroupFaces(groups, pad, step, faceInfluence);
         }
 
-        this.drawLastMoveMarker(pad, step);
-        this.drawRemovedStoneMarks(pad, step);
-        this.drawInfluenceNumbers(pad, step);
-        this.drawJosekiChoices(pad, step);
+        if (!this.hideStones) {
+          this.drawLastMoveMarker(pad, step);
+          this.drawRemovedStoneMarks(pad, step);
+          this.drawInfluenceNumbers(pad, step);
+          this.drawJosekiChoices(pad, step);
+        }
 
-        if (this.showPhantom && this.phantomHover) {
+        if (!this.hideStones && this.showPhantom && this.phantomHover) {
           const hx = pad + this.phantomHover.x * step;
           const hy = pad + this.phantomHover.y * step;
 
@@ -270,7 +277,7 @@ GoBoard.prototype.draw = function() {
           c.restore();
         }
 
-        this.drawFogOverlay(pad, step, cssSize);
+        if (!this.hideStones) this.drawFogOverlay(pad, step, cssSize);
 
         if (realStones) {
           this.stones = realStones;
