@@ -196,6 +196,7 @@ window.stoneSound = (() => {
     const boardInfluenceBtn = document.getElementById('boardInfluence');
     const boardPhantomBtn = document.getElementById('boardPhantom');
     const boardFogBtn = document.getElementById('boardFog');
+    const boardHideBtn = document.getElementById('boardHide');
     const boardPauseBtn = document.getElementById('boardPause');
     const influenceStrengthInput = document.getElementById('influenceStrength');
     const influenceThreeLibFactorInput = document.getElementById('influenceThreeLibFactor');
@@ -235,6 +236,11 @@ window.stoneSound = (() => {
     boardFogBtn.addEventListener('click', () => {
       board.setFogVisible(!board.showFog);
       boardFogBtn.classList.toggle('active', board.showFog);
+    });
+    boardHideBtn.addEventListener('click', () => {
+      board.setStonesHidden(!board.hideStones);
+      boardHideBtn.classList.toggle('active', board.hideStones);
+      boardHideBtn.setAttribute('aria-pressed', String(board.hideStones));
     });
     boardPauseBtn.addEventListener('click', () => {
       window.movePause.setEnabled(!window.movePause.enabled);
