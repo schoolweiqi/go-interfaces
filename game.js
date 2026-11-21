@@ -11,6 +11,8 @@ class GoBoard {
           this.removedStoneKeys = new Set();
           this.onIntersection = null;
           this.showClean = false;
+          // Blind Go: hide stones visually without changing the actual position.
+          this.hideStones = false;
           this.showFaces = false;
           this.showLinks = false;
           this.showInfluence = false;
