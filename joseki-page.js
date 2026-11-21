@@ -30,6 +30,7 @@ const boardLinksBtn = document.getElementById("boardLinks");
 const boardInfluenceBtn = document.getElementById("boardInfluence");
 const boardPhantomBtn = document.getElementById("boardPhantom");
 const boardFogBtn = document.getElementById("boardFog");
+const boardHideBtn = document.getElementById("boardHide");
 const boardPauseBtn = document.getElementById("boardPause");
 
 const josekiPause = {
@@ -945,6 +946,7 @@ bindModeButton(boardLinksBtn, () => board.showLinks, value => board.setLinksVisi
 bindModeButton(boardInfluenceBtn, () => board.showInfluence, value => board.setInfluenceVisible(value));
 bindModeButton(boardPhantomBtn, () => board.showPhantom, value => board.setPhantomVisible(value));
 bindModeButton(boardFogBtn, () => board.showFog, value => board.setFogVisible(value));
+bindModeButton(boardHideBtn, () => board.hideStones, value => board.setStonesHidden(value));
 
 if (boardPauseBtn) {
   boardPauseBtn.addEventListener("click", () => {
