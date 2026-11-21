@@ -183,7 +183,8 @@ GoBoard.prototype.draw = function() {
         c.fillStyle = wood;
         c.fillRect(0, 0, cssSize, cssSize);
 
-        if (!this.hideStones) this.drawInfluenceHeatmap(pad, step);
+        // Influence is an independent teaching layer, visible even in blind Go mode.
+        this.drawInfluenceHeatmap(pad, step);
 
         const showGrid = !this.showClean;
         const showFaces = !this.hideStones && this.showFaces;
@@ -247,9 +248,11 @@ GoBoard.prototype.draw = function() {
         if (!this.hideStones) {
           this.drawLastMoveMarker(pad, step);
           this.drawRemovedStoneMarks(pad, step);
-          this.drawInfluenceNumbers(pad, step);
           this.drawJosekiChoices(pad, step);
         }
+
+        // Optional numeric influence labels remain available with hidden stones.
+        this.drawInfluenceNumbers(pad, step);
 
         if (!this.hideStones && this.showPhantom && this.phantomHover) {
           const hx = pad + this.phantomHover.x * step;
