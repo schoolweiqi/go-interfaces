@@ -214,6 +214,8 @@ window.stoneSound = (() => {
     const gameInfoBlackClock = document.getElementById('gameInfoBlackClock');
     const gameInfoWhiteClock = document.getElementById('gameInfoWhiteClock');
     const gameInfoStatus = document.getElementById('gameInfoStatus');
+    const gameInfoPassButton = document.getElementById('gameInfoPass');
+    const gameInfoResignButton = document.getElementById('gameInfoResign');
 
     // Sum the same signed, two-decimal intersection values shown by the "Число" layer.
     // Cache by position and influence settings so hover/redraws do not recalculate.
@@ -405,6 +407,7 @@ window.stoneSound = (() => {
       moveNumber.textContent = String(currentMoveNumber());
     }
 
+    let localResignedBy = null;
     let gameInfoSessionKey = null;
     let gameInfoStartedAt = null;
     let gameInfoStoppedAt = null;
@@ -558,7 +561,15 @@ window.stoneSound = (() => {
       gameInfoWhiteClock.hidden = !clocksVisible;
       gameInfoBlack.classList.toggle('is-active', turn === 1);
       gameInfoWhite.classList.toggle('is-active', turn === 2);
+      if (gameMode === 'local' && localResignedBy) status = localResignedBy === 1 ? 'Чёрные сдались' : 'Белые сдались';
+      if (gameMode === 'network' && networkGame.lastState?.resignedBy) status = networkGame.lastState.resignedBy === 1 ? 'Чёрные сдались' : 'Белые сдались';
       gameInfoStatus.textContent = status;
+      const ogsReady = gameMode === 'ogs' && ogsGame.active && ogsGame.phase === 'play' && ogsSocketReady;
+      const networkReady = gameMode === 'network' && networkGame.active && networkGame.connected && networkGame.lastState?.status === 'playing';
+      const botReady = gameMode === 'bot' && botGame.active && !botGame.ended && !botGame.thinking;
+      const localReady = gameMode === 'local' && !localResignedBy;
+      gameInfoPassButton.disabled = !((ogsReady && !ogsGame.awaitingMove && ogsGame.color === turn) || (networkReady && networkGame.color === turn) || (botReady && botGame.humanColor === turn) || localReady);
+      gameInfoResignButton.disabled = !((ogsReady && (ogsGame.color === 1 || ogsGame.color === 2)) || (networkReady && (networkGame.color === 1 || networkGame.color === 2)) || botReady || localReady);
     }
 
     function resetGameInfoTimer() {
@@ -802,6 +813,7 @@ window.stoneSound = (() => {
         return;
       }
 
+      if (localResignedBy) return;
       const result = board.playStone(x, y, turn);
       if (!result.ok) {
         const messages = { occupied: 'Пересечение занято.', suicide: 'Самоубийственный ход запрещён.', ko: 'Нельзя немедленно повторить позицию ко.' };
@@ -816,6 +828,7 @@ window.stoneSound = (() => {
     };
 
     sizeSelect.addEventListener('change', () => {
+      localResignedBy = null;
       if (gameMode === 'bot' && botGame.active) {
         gameMsg.textContent = 'Размер текущей партии с GNU Go менять нельзя. Настройка OGS применится к следующему поиску.';
         return;
@@ -830,6 +843,7 @@ window.stoneSound = (() => {
     });
 
     document.getElementById('newGame').addEventListener('click', () => {
+      localResignedBy = null;
       if (botGame.active) stopBotGame();
       gameMode = 'local';
       board.setSize(Number(sizeSelect.value));
@@ -845,7 +859,29 @@ window.stoneSound = (() => {
     document.getElementById('cancelSearch').addEventListener('click', cancelAutomatch);
 
 
+    gameInfoPassButton.addEventListener('click', () => document.getElementById('pass').click());
+    gameInfoResignButton.addEventListener('click', () => {
+      if (gameMode === 'ogs') {
+        resignOgsGame();
+      } else if (gameMode === 'network') {
+        if (networkGame.lastState?.status === 'playing' && window.confirm('Сдаться в сетевой партии?')) sendNetworkAction({ type: 'resign' });
+      } else if (gameMode === 'bot') {
+        if (!botGame.active || botGame.ended || !window.confirm('Сдаться в партии с GNU Go?')) return;
+        const resignedColor = botGame.humanColor;
+        stopBotGame();
+        botStatus.textContent = 'Вы сдались. Партия с GNU Go завершена.';
+        gameMsg.textContent = 'Поражение по сдаче: ' + (resignedColor === 1 ? 'W+R' : 'B+R');
+        renderGameInfo();
+      } else if (gameMode === 'local') {
+        if (localResignedBy || !window.confirm('Сдаться в локальной партии?')) return;
+        localResignedBy = turn;
+        gameMsg.textContent = turn === 1 ? 'Чёрные сдались. Победили белые.' : 'Белые сдались. Победили чёрные.';
+        renderGameInfo();
+      }
+    });
+
     document.getElementById('pass').addEventListener('click', async () => {
+      if (gameMode === 'local' && localResignedBy) return;
       if (gameMode !== 'ogs' && pauseBlocksMove(gameMode === 'network' ? networkStatus : gameMsg)) return;
 
       if (gameMode === 'ogs') {
