@@ -595,11 +595,17 @@ canvas {
 }
 .ogsMatchActions {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(70px, .42fr);
-  gap: 7px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, .82fr) minmax(52px, .44fr);
+  gap: 6px;
   margin-bottom: 9px;
 }
-.ogsMatchActions button { margin: 0; }
+.ogsMatchActions button {
+  min-width: 0;
+  margin: 0;
+  padding-left: 4px;
+  padding-right: 4px;
+  white-space: nowrap;
+}
 .ogsStatus,
 .ogsGameInfo,
 .ogsClock,
