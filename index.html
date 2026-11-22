@@ -157,6 +157,21 @@
           </div>
         </section>
 
+        <section class="panel fox">
+          <h2 class="panelHeading">
+            <button class="panelToggle" type="button" aria-expanded="false" aria-controls="foxPanelBody">
+              Fox
+            </button>
+          </h2>
+          <div id="foxPanelBody" class="panelBody" hidden>
+            <div class="ogsAuthActions">
+              <button id="foxConnect" type="button">Подключиться</button>
+              <button id="foxDisconnect" class="secondary" type="button" hidden>Отключиться</button>
+            </div>
+            <div id="foxStatus" class="msg" role="status" aria-live="polite">Не подключено к Fox.</div>
+          </div>
+        </section>
+
         <section class="panel network">
           <h2 class="panelHeading">
             <button class="panelToggle" type="button" aria-expanded="false" aria-controls="networkPanelBody">
@@ -357,6 +372,7 @@
   <script src="faces.js"></script>
   <script src="board.js"></script>
   <script src="ogs.js"></script>
+  <script src="fox.js"></script>
   <script src="ai.js"></script>
   <script src="sgf.js"></script>
   <script src="tree.js"></script>
