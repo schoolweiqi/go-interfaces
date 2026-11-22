@@ -299,6 +299,7 @@ export class GameRoom extends DurableObject {
       captures: state.captures,
       consecutivePasses: state.consecutivePasses,
       status: state.status,
+      resignedBy: state.resignedBy || null,
       lastMove: state.lastMove,
       presence
     };
@@ -389,9 +390,14 @@ export class GameRoom extends DurableObject {
     if (state.status !== "playing") return this.sendError(ws, "Партия уже завершена");
     const color = attachment?.color;
     if (color !== 1 && color !== 2) return this.sendError(ws, "Неизвестный игрок");
-    if (state.turn !== color) return this.sendError(ws, "Сейчас ход соперника");
+    // Resignation is permitted even when it is the opponent's turn.
+    if (data.type !== "resign" && state.turn !== color) return this.sendError(ws, "Сейчас ход соперника");
 
-    if (data.type === "move") {
+    if (data.type === "resign") {
+      state.status = "ended";
+      state.resignedBy = color;
+      state.lastMove = { resign: true, color };
+    } else if (data.type === "move") {
       const result = this.applyMove(state, Number(data.x), Number(data.y), color);
       if (!result.ok) return this.sendError(ws, result.error);
     } else if (data.type === "pass") {
