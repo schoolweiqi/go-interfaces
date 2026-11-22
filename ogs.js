@@ -76,6 +76,8 @@ const ogsGame = {
   moves: [],
   moveNumber: 0,
   nextMoveColor: 1,
+  handicap: 0,
+  freeHandicapPlacement: false,
   removed: new Set(),
   acceptedByMe: false,
   awaitingMove: false,
@@ -1143,6 +1145,8 @@ function resetOgsGameState() {
   ogsGame.moves = [];
   ogsGame.moveNumber = 0;
   ogsGame.nextMoveColor = 1;
+  ogsGame.handicap = 0;
+  ogsGame.freeHandicapPlacement = false;
   ogsGame.removed = new Set();
   ogsGame.acceptedByMe = false;
   ogsGame.awaitingMove = false;
@@ -1390,6 +1394,41 @@ function setRemovedKeysFromMoves(moves) {
   board.draw();
 }
 
+function colorizeOgsGameMoves(data, moves) {
+  const handicap = Math.max(0, Math.round(Number(data && data.handicap) || 0));
+  const freeHandicap = Boolean(data && data.free_handicap_placement);
+  let nextColor = data && data.initial_player === "white" ? 2 : 1;
+
+  const coloredMoves = moves.map((rawMove, index) => {
+    const move = { ...rawMove };
+    const explicitColor = Number(move.color);
+
+    let color;
+    if (explicitColor === 1 || explicitColor === 2) {
+      color = explicitColor;
+    } else if (freeHandicap && handicap > 0 && index < handicap) {
+      // OGS free-handicap placement is represented as ordinary moves, but
+      // all handicap placements are Black. The player does not alternate
+      // until the final handicap stone has been placed.
+      color = 1;
+    } else {
+      color = nextColor;
+    }
+
+    move.color = color;
+
+    if (freeHandicap && handicap > 0 && index < handicap) {
+      nextColor = index + 1 < handicap ? 1 : 2;
+    } else {
+      nextColor = color === 1 ? 2 : 1;
+    }
+
+    return move;
+  });
+
+  return { moves: coloredMoves, nextColor, handicap, freeHandicap };
+}
+
 function applyOgsGamedata(data) {
   if (!data || typeof data !== "object") return;
 
@@ -1418,6 +1457,8 @@ function applyOgsGamedata(data) {
     ? { ...data.clock, _received_at: Date.now() }
     : ogsGame.clock;
   ogsGame.timeControl = data.time_control || ogsGame.timeControl;
+  ogsGame.handicap = Math.max(0, Math.round(Number(data.handicap) || 0));
+  ogsGame.freeHandicapPlacement = Boolean(data.free_handicap_placement);
   ogsGame.awaitingMove = false;
 
   sessionStorage.setItem("ogs_active_game_id", String(gameId));
@@ -1438,19 +1479,22 @@ function applyOgsGamedata(data) {
   board.positionHistory = [board.positionKey()];
   board.updateFogExploration();
 
-  const moves = decodeOgsMoves(data.moves);
-  let nextColor = data.initial_player === "white" ? 2 : 1;
+  const decodedMoves = decodeOgsMoves(data.moves);
+  const colored = colorizeOgsGameMoves(data, decodedMoves);
+  const moves = colored.moves;
+  let nextColor = colored.nextColor;
+
   for (const move of moves) {
-    const color = move.color === 1 || move.color === 2 ? move.color : nextColor;
-    if (!applyAuthoritativeOgsMove(move, color, false)) {
+    if (!applyAuthoritativeOgsMove(move, move.color, false)) {
       console.warn("Не удалось восстановить подтверждённый ход OGS", move);
       break;
     }
-    nextColor = color === 1 ? 2 : 1;
   }
 
   ogsGame.moves = moves.slice();
   ogsGame.moveNumber = moves.length;
+  ogsGame.handicap = colored.handicap;
+  ogsGame.freeHandicapPlacement = colored.freeHandicap;
 
   if (typeof window.resetLiveGameTree === "function") {
     window.resetLiveGameTree({
@@ -1519,9 +1563,16 @@ function applyOgsMoveEvent(data) {
   // Do not use the UI turn indicator to color an incoming stone.
   // A clock event for the next player can arrive before the move event itself.
   // The authoritative move sequence is the stable source for the stone color.
+  const inFreeHandicapPlacement =
+    ogsGame.freeHandicapPlacement &&
+    ogsGame.handicap > 0 &&
+    ogsGame.moveNumber < ogsGame.handicap;
+
   const color = move.color === 1 || move.color === 2
     ? move.color
-    : ogsGame.nextMoveColor;
+    : inFreeHandicapPlacement
+      ? 1
+      : ogsGame.nextMoveColor;
 
   if (color !== 1 && color !== 2) {
     resyncOgsGame("Не удалось определить цвет хода OGS. Синхронизирую позицию…");
@@ -1546,7 +1597,16 @@ function applyOgsMoveEvent(data) {
     ? serverMoveNumber
     : ogsGame.moveNumber + 1;
   ogsGame.awaitingMove = false;
-  ogsGame.nextMoveColor = color === 1 ? 2 : 1;
+
+  if (
+    ogsGame.freeHandicapPlacement &&
+    ogsGame.handicap > 0 &&
+    ogsGame.moveNumber < ogsGame.handicap
+  ) {
+    ogsGame.nextMoveColor = 1;
+  } else {
+    ogsGame.nextMoveColor = color === 1 ? 2 : 1;
+  }
 
   const nextPlayerId =
     ogsGame.nextMoveColor === 1
