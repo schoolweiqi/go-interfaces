@@ -396,6 +396,9 @@ body:not(.josekiPage) .boardWrap {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+.gameInfoActions { display: flex; gap: 8px; margin-top: 18px; }
+.gameInfoActions button { flex: 1 1 0; min-width: 0; margin: 0; font-size: 12px; }
+.gameInfoActions button:disabled { opacity: .45; cursor: not-allowed; }
 .gameInfoStatus {
   margin-top: 12px;
   color: #aeb4ba;
