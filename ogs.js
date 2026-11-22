@@ -30,6 +30,7 @@ const authMsg = document.getElementById("authMsg");
 const loginButton = document.getElementById("login");
 const logoutButton = document.getElementById("logout");
 const findButton = document.getElementById("findOpponent");
+const ogsContinueButton = document.getElementById("continueOgsGame");
 const ogsSearchSizes = document.getElementById("ogsSearchSizes");
 const ogsSearchSpeeds = document.getElementById("ogsSearchSpeeds");
 const ogsSearchLowerRank = document.getElementById("ogsSearchLowerRank");
@@ -55,6 +56,7 @@ let lastOgsConfig = null;
 let ogsCurrentUser = null;
 let ogsReconnectTimer = null;
 let ogsReconnectAttempt = 0;
+const ogsContinuableGames = new Map();
 
 const ogsBotChallenge = {
   active: false,
@@ -575,11 +577,156 @@ async function startOgsBotChallenge() {
   }
 }
 
+
+function normalizeOgsActiveGame(game) {
+  if (!game || typeof game !== "object") return null;
+
+  const gamedata =
+    (game.json && typeof game.json === "object" ? game.json : null) ||
+    (game.gamedata && typeof game.gamedata === "object" ? game.gamedata : null) ||
+    game;
+
+  const gameId = Number(game.id || game.game_id || gamedata.game_id);
+  if (!Number.isFinite(gameId) || gameId <= 0) return null;
+
+  const phase = String(game.phase || gamedata.phase || "");
+  const currentPlayer = Number(
+    game.player_to_move !== undefined
+      ? game.player_to_move
+      : gamedata.clock && gamedata.clock.current_player
+  );
+
+  const expiration = Number(
+    game.clock_expiration !== undefined
+      ? game.clock_expiration
+      : gamedata.clock && gamedata.clock.expiration
+  );
+
+  const black =
+    game.black && typeof game.black === "object"
+      ? game.black
+      : gamedata.players && gamedata.players.black;
+  const white =
+    game.white && typeof game.white === "object"
+      ? game.white
+      : gamedata.players && gamedata.players.white;
+
+  return {
+    id: gameId,
+    phase,
+    currentPlayer,
+    expiration: Number.isFinite(expiration) ? expiration : Number.MAX_SAFE_INTEGER,
+    black: black || null,
+    white: white || null,
+    raw: game
+  };
+}
+
+function ogsOpponentNameForGame(game) {
+  if (!game || !ogsCurrentUser) return "";
+  const userId = Number(ogsCurrentUser.id);
+  const blackId = Number(game.black && game.black.id);
+  const whiteId = Number(game.white && game.white.id);
+
+  if (userId === blackId) return ogsPlayerName(game.white, "соперник");
+  if (userId === whiteId) return ogsPlayerName(game.black, "соперник");
+  return "соперник";
+}
+
+function updateOgsContinuableGame(game) {
+  const normalized = normalizeOgsActiveGame(game);
+  if (!normalized) return;
+
+  const userId = Number(ogsCurrentUser && ogsCurrentUser.id);
+  const isOurTurn =
+    normalized.phase === "play" &&
+    Number.isFinite(userId) &&
+    normalized.currentPlayer === userId;
+
+  if (isOurTurn) {
+    ogsContinuableGames.set(normalized.id, normalized);
+  } else {
+    ogsContinuableGames.delete(normalized.id);
+  }
+
+  refreshOgsControls();
+}
+
+function getOgsContinuableGame() {
+  const games = [...ogsContinuableGames.values()];
+  if (!games.length) return null;
+
+  games.sort((a, b) => {
+    const aExpiration = Number.isFinite(a.expiration) ? a.expiration : Number.MAX_SAFE_INTEGER;
+    const bExpiration = Number.isFinite(b.expiration) ? b.expiration : Number.MAX_SAFE_INTEGER;
+    return aExpiration - bExpiration || a.id - b.id;
+  });
+
+  return games[0];
+}
+
+async function refreshOgsContinuableGames(accessToken) {
+  if (!accessToken || !ogsCurrentUser) return;
+
+  const response = await fetch(OGS.apiUrl + "ui/overview", {
+    headers: { Authorization: "Bearer " + accessToken }
+  });
+
+  if (!response.ok) {
+    throw new Error("OGS /ui/overview: HTTP " + response.status);
+  }
+
+  const overview = await response.json().catch(() => ({}));
+  const activeGames = Array.isArray(overview.active_games) ? overview.active_games : [];
+
+  ogsContinuableGames.clear();
+  for (const game of activeGames) {
+    const normalized = normalizeOgsActiveGame(game);
+    if (!normalized) continue;
+
+    const userId = Number(ogsCurrentUser.id);
+    if (normalized.phase === "play" && normalized.currentPlayer === userId) {
+      ogsContinuableGames.set(normalized.id, normalized);
+    }
+  }
+
+  refreshOgsControls();
+}
+
+function continueOgsTurnGame() {
+  const target = getOgsContinuableGame();
+  if (!target) {
+    setOgsStatus("Нет активной OGS-партии, где сейчас ваш ход.");
+    refreshOgsControls();
+    return;
+  }
+
+  if (!ogsSocketReady) {
+    setOgsStatus("Игровое соединение OGS ещё не готово.");
+    return;
+  }
+
+  if (activeAutomatchUuid) {
+    setOgsStatus("Сначала отмените поиск соперника.");
+    return;
+  }
+
+  if (ogsBotChallenge.active) {
+    setOgsStatus("Сначала дождитесь ответа на вызов или переподключитесь к OGS.");
+    return;
+  }
+
+  const opponent = ogsOpponentNameForGame(target);
+  setOgsStatus("Открываю партию #" + target.id + " против " + opponent + "…");
+  beginOgsGame(target.id, true);
+}
+
 function refreshOgsControls() {
   const token = sessionStorage.getItem("ogs_access_token");
   const loggedIn = Boolean(token && ogsCurrentUser);
   const searching = Boolean(activeAutomatchUuid);
   const pendingBotChallenge = Boolean(ogsBotChallenge.active);
+  const continuableGame = getOgsContinuableGame();
   const activeLiveGame = Boolean(ogsGame.active && ogsGame.phase && ogsGame.phase !== "finished");
 
   loginButton.hidden = loggedIn;
@@ -589,6 +736,24 @@ function refreshOgsControls() {
   cancelButton.hidden = !searching;
   findButton.disabled = !loggedIn || !ogsSocketReady || activeLiveGame || pendingBotChallenge;
   cancelButton.disabled = !ogsSocketReady;
+
+  if (ogsContinueButton) {
+    ogsContinueButton.disabled =
+      !loggedIn ||
+      !ogsSocketReady ||
+      searching ||
+      pendingBotChallenge ||
+      activeLiveGame ||
+      !continuableGame;
+
+    if (continuableGame) {
+      const opponent = ogsOpponentNameForGame(continuableGame);
+      ogsContinueButton.title =
+        "Продолжить партию #" + continuableGame.id + " против " + opponent;
+    } else {
+      ogsContinueButton.title = "Нет активной партии, где сейчас ваш ход";
+    }
+  }
 
   if (ogsBotButton) {
     ogsBotButton.disabled =
@@ -664,6 +829,7 @@ function setSearchState(searching, message) {
 
 function setLoggedOut(message = "Не подключено к OGS") {
   ogsCurrentUser = null;
+  ogsContinuableGames.clear();
   authMsg.textContent = message;
   setOgsStatus("Подключитесь к OGS, чтобы искать партии.");
   refreshOgsControls();
@@ -678,6 +844,11 @@ function setLoggedIn(user) {
 
   const token = sessionStorage.getItem("ogs_access_token");
   if (token) {
+    refreshOgsContinuableGames(token).catch((error) => {
+      console.warn("Не удалось получить активные партии OGS:", error);
+      refreshOgsControls();
+    });
+
     connectOgsSocket(token).catch((error) => {
       setOgsStatus("OGS API подключён, но игровой сервер недоступен: " + error.message);
     });
@@ -1222,6 +1393,17 @@ function setRemovedKeysFromMoves(moves) {
 function applyOgsGamedata(data) {
   if (!data || typeof data !== "object") return;
 
+  if (data.game_id) {
+    updateOgsContinuableGame({
+      id: data.game_id,
+      phase: data.phase,
+      player_to_move: data.clock && data.clock.current_player,
+      clock_expiration: data.clock && data.clock.expiration,
+      black: data.players && data.players.black,
+      white: data.players && data.players.white
+    });
+  }
+
   const gameId = Number(data.game_id || ogsGame.gameId);
   if (!Number.isFinite(gameId)) return;
 
@@ -1365,6 +1547,20 @@ function applyOgsMoveEvent(data) {
     : ogsGame.moveNumber + 1;
   ogsGame.awaitingMove = false;
   ogsGame.nextMoveColor = color === 1 ? 2 : 1;
+
+  const nextPlayerId =
+    ogsGame.nextMoveColor === 1
+      ? Number(ogsGame.players.black && ogsGame.players.black.id)
+      : Number(ogsGame.players.white && ogsGame.players.white.id);
+
+  updateOgsContinuableGame({
+    id: ogsGame.gameId,
+    phase: ogsGame.phase,
+    player_to_move: nextPlayerId,
+    clock_expiration: ogsGame.clock && ogsGame.clock.expiration,
+    black: ogsGame.players.black,
+    white: ogsGame.players.white
+  });
 
   // The move sequence determines who should play next. A later clock event
   // may confirm the same value and update the visible timer.
@@ -1574,6 +1770,7 @@ function refreshFinishedGameResult(attempt = 0) {
 
 function finishOgsGame(data = {}) {
   ogsGame.phase = "finished";
+  if (ogsGame.gameId) ogsContinuableGames.delete(Number(ogsGame.gameId));
   ogsGame.awaitingMove = false;
   if (data.score) ogsGame.score = data.score;
   if (data.winner !== undefined) ogsGame.winner = data.winner;
@@ -1681,6 +1878,11 @@ function handleOgsSocketMessage(event) {
     clearOgsBotChallenge();
     setOgsStatus("Вызов отклонён: " + rejection);
     refreshOgsControls();
+    return;
+  }
+
+  if (type === "active_game") {
+    updateOgsContinuableGame(data);
     return;
   }
 
@@ -1885,6 +2087,15 @@ findButton.addEventListener("click", () => {
   } catch (error) {
     activeAutomatchUuid = null;
     setOgsStatus("Не удалось запустить поиск: " + error.message);
+    refreshOgsControls();
+  }
+});
+
+ogsContinueButton.addEventListener("click", () => {
+  try {
+    continueOgsTurnGame();
+  } catch (error) {
+    setOgsStatus("Не удалось продолжить партию: " + error.message);
     refreshOgsControls();
   }
 });
