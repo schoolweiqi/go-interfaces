@@ -222,7 +222,6 @@ window.stoneSound = (() => {
       const key = [board.size, board.positionKey(), board.influenceStrength,
         board.influenceThreeLibFactor, board.influenceStonePointClamp].join('|');
       if (key === influenceTotalsKey) return;
-      influenceTotalsKey = key;
       const heatmap = board.computeInfluenceHeatmap();
       let black = 0;
       let white = 0;
@@ -234,6 +233,7 @@ window.stoneSound = (() => {
       }
       influenceBlackTotal.textContent = black.toFixed(2);
       influenceWhiteTotal.textContent = white.toFixed(2);
+      influenceTotalsKey = key;
     }
 
     const drawWithInfluenceTotals = board.draw.bind(board);
@@ -570,7 +570,11 @@ window.stoneSound = (() => {
 
     window.updateGameInfo = renderGameInfo;
     window.resetGameInfoTimer = resetGameInfoTimer;
-    setInterval(renderGameInfo, 1000);
+    setInterval(() => {
+      renderGameInfo();
+      // Fallback for positions updated by external integrations without a draw call.
+      updateInfluenceTotals();
+    }, 1000);
 
     function currentFogViewerColor() {
       if (gameMode === 'bot' && botGame.active) return botGame.humanColor;
