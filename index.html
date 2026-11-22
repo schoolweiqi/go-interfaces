@@ -276,10 +276,16 @@
               <label>Stone-point clamp
                 <input id="influenceStonePointClamp" type="number" min="0" max="1" step="0.05" value="0.5">
               </label>
-              <label class="settingsCheck">
-                <input id="influenceNumbers" type="checkbox">
-                <span>Число</span>
-              </label>
+              <div class="settingsInfluenceRow">
+                <label class="settingsCheck">
+                  <input id="influenceNumbers" type="checkbox">
+                  <span>Число</span>
+                </label>
+                <div class="influenceTotals" aria-live="off">
+                  <output id="influenceBlackTotal" class="influenceTotalBlack" aria-label="Сумма влияния чёрных" title="Сумма влияния чёрных">0.00</output>
+                  <output id="influenceWhiteTotal" class="influenceTotalWhite" aria-label="Сумма влияния белых" title="Сумма влияния белых">0.00</output>
+                </div>
+              </div>
             </div>
             <div class="settingsGroup">
               <h3>Пауза перед ходом</h3>
