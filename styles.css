@@ -470,6 +470,13 @@ canvas {
   dominant-baseline: central;
 }
 
+/* Influence totals: black first, white second; no visible captions. */
+.settingsInfluenceRow { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.settingsInfluenceRow .settingsCheck { min-width: 0; }
+.influenceTotals { display: flex; align-items: center; gap: 10px; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.influenceTotalBlack { color: #ff82aa; }
+.influenceTotalWhite { color: #76bcff; }
+
 /* Настройки. */
 .settings button { margin-bottom: 0; }
 .settings > .panelToggle {
