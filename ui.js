@@ -202,6 +202,8 @@ window.stoneSound = (() => {
     const influenceThreeLibFactorInput = document.getElementById('influenceThreeLibFactor');
     const influenceStonePointClampInput = document.getElementById('influenceStonePointClamp');
     const influenceNumbersInput = document.getElementById('influenceNumbers');
+    const influenceBlackTotal = document.getElementById('influenceBlackTotal');
+    const influenceWhiteTotal = document.getElementById('influenceWhiteTotal');
     const movePauseSecondsInput = document.getElementById('movePauseSeconds');
     const stoneSoundVolumeInput = document.getElementById('stoneSoundVolume');
     const gameInfoElapsed = document.getElementById('gameInfoElapsed');
@@ -212,6 +214,35 @@ window.stoneSound = (() => {
     const gameInfoBlackClock = document.getElementById('gameInfoBlackClock');
     const gameInfoWhiteClock = document.getElementById('gameInfoWhiteClock');
     const gameInfoStatus = document.getElementById('gameInfoStatus');
+
+    // Sum the same signed, two-decimal intersection values shown by the "Число" layer.
+    // Cache by position and influence settings so hover/redraws do not recalculate.
+    let influenceTotalsKey = null;
+    function updateInfluenceTotals() {
+      const key = [board.size, board.positionKey(), board.influenceStrength,
+        board.influenceThreeLibFactor, board.influenceStonePointClamp].join('|');
+      if (key === influenceTotalsKey) return;
+      influenceTotalsKey = key;
+      const heatmap = board.computeInfluenceHeatmap();
+      let black = 0;
+      let white = 0;
+      for (const normalized of heatmap) {
+        const signed = (normalized - 0.5) * 2;
+        const rounded = Math.abs(signed) < 0.005 ? 0 : Number(signed.toFixed(2));
+        if (rounded > 0) black += rounded;
+        else if (rounded < 0) white -= rounded;
+      }
+      influenceBlackTotal.textContent = black.toFixed(2);
+      influenceWhiteTotal.textContent = white.toFixed(2);
+    }
+
+    const drawWithInfluenceTotals = board.draw.bind(board);
+    board.draw = function(...args) {
+      const result = drawWithInfluenceTotals(...args);
+      updateInfluenceTotals();
+      return result;
+    };
+    updateInfluenceTotals();
 
     boardCleanBtn.addEventListener('click', () => {
       board.setCleanVisible(!board.showClean);
