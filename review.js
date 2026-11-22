@@ -448,7 +448,14 @@
 
   function acceptServerState(s){
     if(!s) return;
-    if(Array.isArray(s.items)) state.items=s.items;
+    if(Array.isArray(s.items)) {
+      // A remote participant may have cleared the shared review.
+      if(state.items.length > 0 && s.items.length === 0) {
+        state.number = 1;
+        state.letter = 0;
+      }
+      state.items=s.items;
+    }
     state.connectedParticipants=Number(s.connectedParticipants||1);
     updateIdentity();
     if(!state.host&&s.boardState) applyRemoteBoard(s.boardState);
@@ -642,8 +649,14 @@
   }
 
   function clearAll(){
-    if(state.connected){send({type:'review-clear'});return}
-    state.items=[];
+    if(state.connected && !send({type:'review-clear'})) {
+      setStatus('Связь с сервером потеряна: метки не очищены.');
+      return;
+    }
+    // Clear starts a fresh sequence of labels for the next teaching example.
+    state.number = 1;
+    state.letter = 0;
+    state.items = [];
     board.draw();
   }
 
